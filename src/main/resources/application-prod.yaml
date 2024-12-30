@@ -1,0 +1,28 @@
+spring:
+  config:
+    activate:
+      on-profile: "prod"
+
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns:
+              - ${PROD_CORS_PATTERNS}
+            allow-credentials: true
+            allowed-methods:
+              - PUT
+              - GET
+              - POST
+              - DELETE
+              - OPTIONS
+              - PATCH
+      httpclient:
+        connect-timeout: ${PROD_HTTP_CLIENT_CONNECT_TIMEOUT}
+        response-timeout: ${PROD_HTTP_CLIENT_RESPONSE_TIMEOUT}
+
+server:
+  port: 80
