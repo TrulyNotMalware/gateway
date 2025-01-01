@@ -2,7 +2,7 @@ spring:
   config:
     activate:
       on-profile: "prod"
-
+# TODO Split this filters and routes
   cloud:
     gateway:
       default-filters:
@@ -11,7 +11,7 @@ spring:
         cors-configurations:
           '[/**]':
             allowed-origin-patterns:
-              - ${PROD_CORS_PATTERNS}
+              - ${PRJ-DOK-ORIGINS}
             allow-credentials: true
             allowed-methods:
               - PUT
@@ -23,6 +23,14 @@ spring:
       httpclient:
         connect-timeout: ${PROD_HTTP_CLIENT_CONNECT_TIMEOUT}
         response-timeout: ${PROD_HTTP_CLIENT_RESPONSE_TIMEOUT}
+
+      routes:
+        - id: PRJ-DOK-FILTER
+          uri: ${PRJ-DOK-URI}
+          predicates:
+            - Path=/dok/**
+          filters:
+            - RewritePath=/dok/(?<segment>.*), /$\{segment}
 
 server:
   port: 80

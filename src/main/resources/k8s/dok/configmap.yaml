@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-cm
+  namespace: api-service
+data:
+  PRJ-DOK-ORIGINS: "ORIGINS"
+  PROD_HTTP_CLIENT_CONNECT_TIMEOUT: "SECONDS"
+  PROD_HTTP_CLIENT_RESPONSE_TIMEOUT: "SECONDS"
+  PRJ-DOK-URI: "URI"

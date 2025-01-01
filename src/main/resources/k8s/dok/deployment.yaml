@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deploy
+  namespace: api-service
+spec:
+  selector:
+    matchLabels:
+      app: api-gateway-deploy
+  template:
+    metadata:
+      labels:
+        app: api-gateway-deploy
+    spec:
+      containers:
+        - name: api-gateway-deploy
+          image: ${IMAGE_REPOSITORY}
+          ports:
+            - containerPort: 80
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: tz-seoul
+              mountPath: /etc/localtime
+          envFrom:
+            - configMapRef:
+                name: api-gateway-cm
+      volumes:
+        - name: tz-seoul
+          hostPath:
+            path: /usr/share/zoneinfo/Asia/Seoul
