@@ -1,0 +1,78 @@
+name: Run tests
+on:
+  push:
+    branches:
+      - "feature/*"
+      - "feat/*"
+      - "features/*"
+    paths:
+      - "application/**"
+      - "domain/**"
+      - "infrastructure/**"
+      - "*.gradle.kts"
+      - "gradle/**"
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            application:
+              - 'application/**'
+            domain:
+              - 'domain/**'
+            infrastructure:
+              - 'infrastructure/**'
+            gradle:
+              - 'gradle/**'
+              - '*.gradle.kts'
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Collect test modules
+        id: collect
+        run: |
+          if [ "${{ steps.changes.outputs.gradle }}" == "true" ]; then
+            echo "modules=test" >> $GITHUB_OUTPUT
+          else
+            modules=""
+            if [ "${{ steps.changes.outputs.application }}" == "true" ]; then
+              modules="$modules :application:test"
+            fi
+            if [ "${{ steps.changes.outputs.domain }}" == "true" ]; then
+              modules="$modules :domain:test"
+            fi
+            if [ "${{ steps.changes.outputs.infrastructure }}" == "true" ]; then
+              modules="$modules :infrastructure:test"
+            fi
+            echo "modules=$modules" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run selected tests
+        if: steps.collect.outputs.modules != ''
+        run: ./gradlew ${{ steps.collect.outputs.modules }}
+
+      - name: Bundle the build report
+        if: failure()
+        run: find . -type d -name 'reports' | zip -@ -r build-reports.zip
+
+      - name: Upload the build report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-report
+          path: build-reports.zip

@@ -2,35 +2,36 @@ spring:
   config:
     activate:
       on-profile: "prod"
-# TODO Split this filters and routes
+
   cloud:
     gateway:
-      default-filters:
-        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allowed-origin-patterns:
-              - ${PRJ-DOK-ORIGINS}
-            allow-credentials: true
-            allowed-methods:
-              - PUT
-              - GET
-              - POST
-              - DELETE
-              - OPTIONS
-              - PATCH
-      httpclient:
-        connect-timeout: ${PROD_HTTP_CLIENT_CONNECT_TIMEOUT}
-        response-timeout: ${PROD_HTTP_CLIENT_RESPONSE_TIMEOUT}
-
-      routes:
-        - id: PRJ-DOK-FILTER
-          uri: ${PRJ-DOK-URI}
-          predicates:
-            - Path=/dok/**
-          filters:
-            - RewritePath=/dok/(?<segment>.*), /$\{segment}
+      server:
+        webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns:
+                  - ${PRJ-DOK-ORIGINS}
+                allow-credentials: true
+                allowed-methods:
+                  - PUT
+                  - GET
+                  - POST
+                  - DELETE
+                  - OPTIONS
+                  - PATCH
+          httpclient:
+            connect-timeout: ${PROD_HTTP_CLIENT_CONNECT_TIMEOUT}
+            response-timeout: ${PROD_HTTP_CLIENT_RESPONSE_TIMEOUT}
+          routes:
+            - id: PRJ-DOK-FILTER
+              uri: ${PRJ-DOK-URI}
+              predicates:
+                - Path=/dok/**
+              filters:
+                - RewritePath=/dok/(?<segment>.*), /$\{segment}
 
 server:
   port: 80
