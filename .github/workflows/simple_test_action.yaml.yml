@@ -6,9 +6,8 @@ on:
       - "feat/*"
       - "features/*"
     paths:
-      - "application/**"
-      - "domain/**"
-      - "infrastructure/**"
+      - "src/**"
+      - "test/**"
       - "*.gradle.kts"
       - "gradle/**"
 permissions:
@@ -24,15 +23,14 @@ jobs:
         id: changes
         with:
           filters: |
-            application:
-              - 'application/**'
-            domain:
-              - 'domain/**'
-            infrastructure:
-              - 'infrastructure/**'
+            src:
+              - 'src/**'
+            test:
+              - 'test/**'
             gradle:
               - 'gradle/**'
               - '*.gradle.kts'
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -43,28 +41,21 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Collect test modules
+      - name: Determine test execution
         id: collect
         run: |
-          if [ "${{ steps.changes.outputs.gradle }}" == "true" ]; then
+          if [ "${{ steps.changes.outputs.gradle }}" == "true" ] ||
+             [ "${{ steps.changes.outputs.src }}" == "true" ] ||
+             [ "${{ steps.changes.outputs.test }}" == "true" ]; then
+            echo "should-test=true" >> $GITHUB_OUTPUT
             echo "modules=test" >> $GITHUB_OUTPUT
           else
-            modules=""
-            if [ "${{ steps.changes.outputs.application }}" == "true" ]; then
-              modules="$modules :application:test"
-            fi
-            if [ "${{ steps.changes.outputs.domain }}" == "true" ]; then
-              modules="$modules :domain:test"
-            fi
-            if [ "${{ steps.changes.outputs.infrastructure }}" == "true" ]; then
-              modules="$modules :infrastructure:test"
-            fi
-            echo "modules=$modules" >> $GITHUB_OUTPUT
+            echo "should-test=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run selected tests
-        if: steps.collect.outputs.modules != ''
-        run: ./gradlew ${{ steps.collect.outputs.modules }}
+      - name: Run tests
+        if: steps.collect.outputs.should-test == 'true'
+        run: ./gradlew test
 
       - name: Bundle the build report
         if: failure()

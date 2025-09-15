@@ -2,7 +2,7 @@ name: Lint Check
 on:
   push:
     branches: ["feature/*", "feat/*", "features/*"]
-    paths: ["application/**", "domain/**", "infrastructure/**", "*.gradle.kts"]
+    paths: ["src/**", "test/**", "*.gradle.kts"]
 
 jobs:
   lint:
