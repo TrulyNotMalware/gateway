@@ -9,6 +9,13 @@ import org.springframework.core.type.AnnotatedTypeMetadata
 fun Environment.extractAppConfig(): AppConfig =
     Binder.get(this).bind(APP_CONFIG_PROPERTIES_PREFIX, AppConfig::class.java).orElse(AppConfig())
 
+class OnDisableRedis : Condition {
+    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata) =
+        context.environment
+            .extractAppConfig()
+            .redis.mode == RedisMode.NONE
+}
+
 class OnRedisRequired : Condition {
     override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata) =
         context.environment

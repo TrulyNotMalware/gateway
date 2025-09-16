@@ -61,7 +61,8 @@ dependencies {
     implementation(
         "io.projectreactor.kotlin:reactor-kotlin-extensions:${rootProject.extra.get("reactorKotlinExtensionVersion")}",
     )
-
+    // actuator
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     // Kotlin logging
     implementation("io.github.oshai:kotlin-logging-jvm:${rootProject.extra.get("kotlinLoggingVersion")}")
 

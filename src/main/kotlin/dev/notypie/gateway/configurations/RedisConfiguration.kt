@@ -9,6 +9,8 @@ import org.redisson.api.RedissonClient
 import org.redisson.api.RedissonReactiveClient
 import org.redisson.codec.JsonJacksonCodec
 import org.redisson.config.Config
+import org.redisson.spring.starter.RedissonAutoConfigurationV2
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Conditional
@@ -81,7 +83,7 @@ class RedisConfiguration(
             Config().apply {
                 useSingleServer().apply {
                     // Base
-                    address = appConfig.redis.node.toString()
+                    address = "redis://${appConfig.redis.host}:${appConfig.redis.port}"
                     password = appConfig.redis.password
                     connectTimeout = appConfig.redis.connectTimeout
                     timeout = appConfig.redis.timeout
@@ -111,6 +113,11 @@ class RedisConfiguration(
     fun redisModule(redissonReactiveClient: RedissonReactiveClient): RedisModule =
         ReactiveRedissonClientModule(client = redissonReactiveClient)
 }
+
+@Configuration
+@Conditional(OnDisableRedis::class)
+@EnableAutoConfiguration(exclude = [RedissonAutoConfigurationV2::class])
+class DisableRedis
 
 @Configuration
 class NoRedisConfiguration {

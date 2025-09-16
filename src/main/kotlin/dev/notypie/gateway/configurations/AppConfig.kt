@@ -30,7 +30,8 @@ data class AppConfig(
     data class Redis(
         val mode: RedisMode = RedisMode.NONE,
         val cluster: Cluster = Cluster(),
-        val node: RedisNode = RedisNode(),
+        val host: String = "127.0.0.1",
+        val port: Int = 7001,
         val standaloneConnectionPoolSize: Int = 64,
         val standaloneConnectionMinimumIdleSize: Int = 10,
         val standaloneDatabase: Int = 0,
@@ -55,13 +56,6 @@ data class AppConfig(
         val failedSlaveReconnectionInterval: Int = 3000,
         val failedNodeDetector: FailedNodeDetectorType = FailedNodeDetectorType.CONNECTION_DETECTOR,
     )
-}
-
-data class RedisNode(
-    val host: String = "127.0.0.1",
-    val port: Int = 7001,
-) {
-    override fun toString() = "redis://$host:$port"
 }
 
 enum class RedisMode {
