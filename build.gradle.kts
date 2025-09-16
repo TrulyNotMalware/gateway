@@ -25,10 +25,14 @@ ktlint {
 }
 
 ext {
-    set("springCloudVersion", "2025.0.0")
+    set("springCloudVersion", "2025.0.0") // https://spring.io/projects/spring-cloud#overview
     set("kotestVersion", "6.0.3") // https://kotest.io/docs/extensions/spring.html
     set("mockkVersion", "1.14.5")
     set("springBootVersion", "3.5.5")
+    set("redissonVersion", "3.51.0")
+    set("kotlinxVersion", "1.10.2")
+    set("reactorKotlinExtensionVersion", "1.3.0-RC4") // https://github.com/reactor/reactor-kotlin-extensions/releases
+    set("kotlinLoggingVersion", "7.0.13")
 }
 
 dependencies {
@@ -38,13 +42,30 @@ dependencies {
     implementation(
         platform("org.springframework.cloud:spring-cloud-dependencies:${rootProject.extra.get("springCloudVersion")}"),
     )
+    // Kotlinx-bom
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:${rootProject.extra.get("kotlinxVersion")}"))
+    // Springboot-bom
     implementation(
         platform("org.springframework.boot:spring-boot-dependencies:${rootProject.extra.get("springBootVersion")}"),
     )
+    // jackson
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
-    implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
+    // Redisson client
+    implementation("org.redisson:redisson-spring-boot-starter:${rootProject.extra.get("redissonVersion")}")
+
+    // Coroutine
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
+    implementation(
+        "io.projectreactor.kotlin:reactor-kotlin-extensions:${rootProject.extra.get("reactorKotlinExtensionVersion")}",
+    )
+
+    // Kotlin logging
+    implementation("io.github.oshai:kotlin-logging-jvm:${rootProject.extra.get("kotlinLoggingVersion")}")
+
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webflux")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")

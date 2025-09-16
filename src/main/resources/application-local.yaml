@@ -1,0 +1,10 @@
+spring:
+  config:
+    activate:
+      on-profile: "local"
+  autoconfigure:
+    exclude: # local profile should not connect to redis
+    - org.redisson.spring.starter.RedissonAutoConfigurationV2
+
+server:
+  port: 8080

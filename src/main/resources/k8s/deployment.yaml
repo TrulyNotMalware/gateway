@@ -12,9 +12,11 @@ spec:
       labels:
         app: api-gateway-deploy
     spec:
+      imagePullSecrets:
+        - name: dockercred
       containers:
         - name: api-gateway-deploy
-          image: ${IMAGE_REPOSITORY}
+          image: $IMAGE_NAME
           ports:
             - containerPort: 80
           imagePullPolicy: Always
