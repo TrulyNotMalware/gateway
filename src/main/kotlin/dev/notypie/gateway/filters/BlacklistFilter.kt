@@ -1,4 +1,4 @@
-package dev.notypie.gateway.filters.global
+package dev.notypie.gateway.filters
 
 import dev.notypie.gateway.service.BlacklistService
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -32,10 +32,10 @@ class BlacklistFilter(
                 try {
                     val isBlocked =
                         withTimeout(config.timeoutMs) {
-                            blacklistService.isAnyBlacklisted(clientIp, userId, apiKey)
+                            blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId, apiKey = apiKey)
                         }
                     if (isBlocked) {
-                        blockRequest(exchange, clientIp, userId, apiKey)
+                        blockRequest(exchange = exchange, clientIp = clientIp, userId = userId, apiKey = apiKey)
                         null
                     } else {
                         chain.filter(exchange).awaitSingleOrNull()
@@ -70,7 +70,7 @@ class BlacklistFilter(
 
         response.statusCode = HttpStatus.FORBIDDEN
         response.headers.contentType = MediaType.APPLICATION_JSON
-
+        // FIXME error response type & jackson serialize.
         val errorMessage =
             """
             {
@@ -88,16 +88,16 @@ class BlacklistFilter(
     private fun logBlockedRequest(clientIp: String, userId: String?, apiKey: String?) =
         logger.error { "BLOCKED REQUEST - IP: $clientIp, UserID: $userId, APIKey: ${apiKey?.take(8)}*** " }
 
-    private fun getClientIp(request: ServerHttpRequest): String {
-        // X-Forwarded-For header check
-        request.headers.getFirst("X-Forwarded-For")?.let { xForwardedFor ->
-            return xForwardedFor.split(",").first().trim()
-        }
-        // X-Real-IP header
-        request.headers.getFirst("X-Real-IP")?.let { return it }
-        // client Ip
-        return request.remoteAddress?.address?.hostAddress ?: "unknown"
-    }
+    private fun getClientIp(request: ServerHttpRequest): String =
+        request.headers
+            .getFirst("X-Forwarded-For")
+            ?.split(",")
+            ?.first()
+            ?.trim()
+            ?: request.headers.getFirst("X-Real-IP")
+            ?: request.headers.getFirst("X-Client-IP")
+            ?: request.remoteAddress?.address?.hostAddress
+            ?: "unknown"
 
     data class Config(
         var timeoutMs: Long = 500L,

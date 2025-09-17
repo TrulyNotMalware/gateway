@@ -23,6 +23,7 @@ The gateway supports different Redis configurations:
 app:
   config:
     redis:
+      mode: standalone
       password: your-password-here
       host: 127.0.0.1
       port: 6379
@@ -33,6 +34,7 @@ app:
 app:
   config:
     redis:
+      mode: cluster
       cluster:
         nodes:
           - redis://redis-node-0:6379
@@ -109,6 +111,7 @@ kubectl apply -f src/main/resources/k8s/service.yaml
 app:
   config:
     redis:
+      mode: standalone
       password: your-password-here
       host: 127.0.0.1
       port: 6379
@@ -121,6 +124,7 @@ app:
   config:
     redis:
       cluster:
+        mode: cluster
         nodes:
           - redis://redis-node-0:6379
           - redis://redis-node-1:6379

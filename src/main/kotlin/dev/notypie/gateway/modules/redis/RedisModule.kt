@@ -10,4 +10,8 @@ interface RedisModule {
     suspend fun delete(key: String): Boolean
 
     suspend fun getKeysByPattern(pattern: String): Set<String>
+
+    suspend fun increment(key: String, count: Long, ttlSeconds: Long = 60): Long
+
+    suspend fun remainingTtl(key: String): Long
 }
