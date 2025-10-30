@@ -35,7 +35,7 @@ class InMemoryModule :
     fun startCleanupTask() {
         launch {
             while (isActive) {
-                delay(TimeUnit.MINUTES.toMillis(CLEANING_INTERVAL_MINUTES))
+                delay(timeMillis = TimeUnit.MINUTES.toMillis(CLEANING_INTERVAL_MINUTES))
                 cleanupExpiredEntries()
             }
         }

@@ -1,9 +1,9 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("jvm") version "2.2.10"
-    kotlin("plugin.spring") version "2.2.10"
-    id("org.springframework.boot") version "3.5.5"
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.spring") version "2.2.20"
+    id("org.springframework.boot") version "3.5.6"
     id("org.jlleitschuh.gradle.ktlint") version "13.1.0"
 }
 
@@ -11,7 +11,11 @@ group = "dev.notypie"
 version = "alpha"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    }
 }
 
 repositories {
@@ -27,11 +31,11 @@ ktlint {
 ext {
     set("springCloudVersion", "2025.0.0") // https://spring.io/projects/spring-cloud#overview
     set("kotestVersion", "6.0.3") // https://kotest.io/docs/extensions/spring.html
-    set("mockkVersion", "1.14.5")
-    set("springBootVersion", "3.5.5")
+    set("mockkVersion", "1.14.6")
+    set("springBootVersion", "3.5.6")
     set("redissonVersion", "3.51.0")
     set("kotlinxVersion", "1.10.2")
-    set("reactorKotlinExtensionVersion", "1.3.0-RC4") // https://github.com/reactor/reactor-kotlin-extensions/releases
+    set("reactorKotlinExtensionVersion", "1.3.0-RC5") // https://github.com/reactor/reactor-kotlin-extensions/releases
     set("kotlinLoggingVersion", "7.0.13")
 }
 
