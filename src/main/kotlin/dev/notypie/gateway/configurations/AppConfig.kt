@@ -1,10 +1,5 @@
 package dev.notypie.gateway.configurations
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.redisson.client.FailedCommandsDetector
 import org.redisson.client.FailedConnectionDetector
 import org.redisson.client.FailedNodeDetector
@@ -15,6 +10,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
+import tools.jackson.databind.cfg.DateTimeFeature
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.module.kotlin.KotlinFeature
+import tools.jackson.module.kotlin.KotlinModule
 
 const val APP_CONFIG_PROPERTIES_PREFIX = "app.config"
 
@@ -80,12 +79,28 @@ enum class FailedNodeDetectorType(
 
 @Configuration
 class JacksonConfiguration {
+//    @Bean
+//    @Primary
+//    fun objectMapper(): ObjectMapper =
+//        ObjectMapper()
+//            .registerKotlinModule()
+//            .registerModules(Jdk8Module(), JavaTimeModule())
+//            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+//            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+
     @Bean
     @Primary
-    fun objectMapper(): ObjectMapper =
-        ObjectMapper()
-            .registerKotlinModule()
-            .registerModules(Jdk8Module(), JavaTimeModule())
-            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+    fun jsonMapper(): JsonMapper =
+        JsonMapper
+            .builder()
+            .findAndAddModules()
+            .addModule(
+                KotlinModule
+                    .Builder()
+                    .enable(KotlinFeature.UseJavaDurationConversion)
+                    .enable(KotlinFeature.KotlinPropertyNameAsImplicitName)
+                    .build(),
+            ).enable(tools.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build()
 }

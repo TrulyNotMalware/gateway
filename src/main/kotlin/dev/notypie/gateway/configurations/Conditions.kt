@@ -7,7 +7,9 @@ import org.springframework.core.env.Environment
 import org.springframework.core.type.AnnotatedTypeMetadata
 
 fun Environment.extractAppConfig(): AppConfig =
-    Binder.get(this).bind(APP_CONFIG_PROPERTIES_PREFIX, AppConfig::class.java).orElse(AppConfig())
+    Binder.get(this).bind(APP_CONFIG_PROPERTIES_PREFIX, AppConfig::class.java).orElseGet {
+        AppConfig()
+    }
 
 class OnDisableRedis : Condition {
     override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata) =

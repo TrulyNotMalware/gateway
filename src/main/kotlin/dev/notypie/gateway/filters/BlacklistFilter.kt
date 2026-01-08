@@ -62,8 +62,8 @@ class BlacklistFilter(
     private suspend fun blockRequest(
         exchange: ServerWebExchange,
         clientIp: String,
-        userId: String?,
-        apiKey: String?,
+        userId: String? = null,
+        apiKey: String? = null,
     ) {
         val response = exchange.response
         logBlockedRequest(clientIp, userId, apiKey)

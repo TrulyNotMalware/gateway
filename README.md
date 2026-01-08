@@ -9,8 +9,8 @@
 
 ## Requirements
 
-- JDK 21
-- Kotlin 2.2.10
+- JDK 25
+- Kotlin 2.3.0
 - Redis (optional, can run in-memory mode)
 
 ## Configuration
@@ -97,8 +97,8 @@ kubectl apply -f src/main/resources/k8s/service.yaml
 
 ## 요구 사항
 
-- JDK 21
-- Kotlin 2.2.10
+- JDK 25
+- Kotlin 2.3.0
 - Redis (선택 사항, 인메모리 모드로 실행 가능)
 
 ## 구성

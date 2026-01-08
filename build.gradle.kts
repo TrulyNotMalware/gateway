@@ -1,93 +1,104 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.kotlin.dsl.withType
+import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
 
 plugins {
-    kotlin("jvm") version "2.2.20"
-    kotlin("plugin.spring") version "2.2.20"
-    id("org.springframework.boot") version "3.5.6"
-    id("org.jlleitschuh.gradle.ktlint") version "13.1.0"
+    kotlin("jvm") version "2.3.0"
+    kotlin("plugin.spring") version "2.3.0"
+    id("org.springframework.boot") version "4.0.1"
+    id("io.spring.dependency-management") version "1.1.7"
+    id("org.jlleitschuh.gradle.ktlint") version "14.0.1"
 }
 
 group = "dev.notypie"
 version = "alpha"
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(25))
-    }
-}
+// remove ext
+val springCloudVersion by extra("2025.1.0")
+val kotestVersion by extra("6.0.3")
+val mockkVersion by extra("1.14.6")
+val springBootVersion by extra("4.0.1")
+val redissonVersion by extra("3.51.0")
+val kotlinxVersion by extra("1.10.2")
+val reactorKotlinExtensionVersion by extra("1.3.0")
+val kotlinLoggingVersion by extra("7.0.13")
 
 repositories {
     mavenCentral()
 }
 
-ktlint {
-    reporters {
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.JSON)
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+        vendor = JvmVendorSpec.ADOPTIUM
     }
 }
 
-ext {
-    set("springCloudVersion", "2025.0.0") // https://spring.io/projects/spring-cloud#overview
-    set("kotestVersion", "6.0.3") // https://kotest.io/docs/extensions/spring.html
-    set("mockkVersion", "1.14.6")
-    set("springBootVersion", "3.5.6")
-    set("redissonVersion", "3.51.0")
-    set("kotlinxVersion", "1.10.2")
-    set("reactorKotlinExtensionVersion", "1.3.0-RC5") // https://github.com/reactor/reactor-kotlin-extensions/releases
-    set("kotlinLoggingVersion", "7.0.13")
+kotlin {
+    jvmToolchain(25)
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xjsr305=strict",
+            "-Xannotation-default-target=param-property",
+            "-java-parameters",
+            "-Xjvm-default=all",
+        )
+    }
 }
 
 dependencies {
     // Kotest-bom
-    implementation(platform("io.kotest:kotest-bom:${rootProject.extra.get("kotestVersion")}"))
+    implementation(platform("io.kotest:kotest-bom:$kotestVersion"))
     // Spring-cloud-bom
     implementation(
-        platform("org.springframework.cloud:spring-cloud-dependencies:${rootProject.extra.get("springCloudVersion")}"),
+        platform("org.springframework.cloud:spring-cloud-dependencies:$springCloudVersion"),
     )
     // Kotlinx-bom
-    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:${rootProject.extra.get("kotlinxVersion")}"))
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:$kotlinxVersion"))
     // Springboot-bom
     implementation(
-        platform("org.springframework.boot:spring-boot-dependencies:${rootProject.extra.get("springBootVersion")}"),
+        platform("org.springframework.boot:spring-boot-dependencies:$springBootVersion"),
     )
-    // jackson
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-
     // Redisson client
-    implementation("org.redisson:redisson-spring-boot-starter:${rootProject.extra.get("redissonVersion")}")
+    implementation("org.redisson:redisson-spring-boot-starter:$redissonVersion")
 
     // Coroutine
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
-    implementation(
-        "io.projectreactor.kotlin:reactor-kotlin-extensions:${rootProject.extra.get("reactorKotlinExtensionVersion")}",
-    )
+    // jackson
+    implementation("io.projectreactor.kotlin:reactor-kotlin-extensions:$reactorKotlinExtensionVersion")
     // actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     // Kotlin logging
-    implementation("io.github.oshai:kotlin-logging-jvm:${rootProject.extra.get("kotlinLoggingVersion")}")
+    implementation("io.github.oshai:kotlin-logging-jvm:$kotlinLoggingVersion")
 
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation(kotlin("reflect"))
+    implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webflux")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
 
-    testImplementation("io.mockk:mockk:${rootProject.extra.get("mockkVersion")}")
+    testImplementation("io.mockk:mockk:$mockkVersion")
     testImplementation("io.kotest:kotest-runner-junit5")
     testImplementation("io.kotest:kotest-extensions-spring")
     testImplementation("io.kotest:kotest-assertions-core")
 }
 
-kotlin {
-    compilerOptions {
-        freeCompilerArgs.addAll("-Xjsr305=strict")
-        jvmTarget = JvmTarget.JVM_21
-    }
-}
-
 tasks.withType<Test> {
     useJUnitPlatform()
+    jvmArgs(
+        "-Xmx4g",
+        "-Dfile.encoding=UTF-8",
+        "-XX:+EnableDynamicAgentLoading",
+        "--add-opens",
+        "java.base/java.lang=ALL-UNNAMED",
+        "--add-opens",
+        "java.base/java.util=ALL-UNNAMED",
+    )
+}
+
+tasks.withType<GenerateReportsTask> {
+    reportsOutputDirectory.set(
+        rootProject.layout.buildDirectory.dir(
+            "reports/ktlint/${project.name}",
+        ),
+    )
 }

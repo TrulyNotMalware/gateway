@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21.0.5_11-jdk-alpine
+FROM eclipse-temurin:25.0.1_8-jre-alpine
 ARG JAR_FILE_NAME=gateway-alpha
 ARG SERVER_PORT=80
 

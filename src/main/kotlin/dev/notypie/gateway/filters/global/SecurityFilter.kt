@@ -47,7 +47,11 @@ class SecurityFilter(
                             val isBlacklisted =
                                 async {
                                     if (config.enableBlacklist) {
-                                        blacklistService.isAnyBlacklisted(clientIp, userId, apiKey)
+                                        blacklistService.isAnyBlacklisted(
+                                            ip = clientIp,
+                                            userId = userId,
+                                            apiKey = apiKey,
+                                        )
                                     } else {
                                         false
                                     }
@@ -76,10 +80,12 @@ class SecurityFilter(
                                     blockRequest(exchange, "BLACKLISTED", clientIp, userId, apiKey)
                                     null
                                 }
+
                                 !rateLimit.allowed -> {
                                     blockRequest(exchange, "RATE_LIMITED", clientIp, userId, apiKey)
                                     null
                                 }
+
                                 else -> {
                                     addRateLimitHeaders(exchange.response, rateLimit)
                                     chain.filter(exchange).awaitSingleOrNull()
@@ -110,24 +116,29 @@ class SecurityFilter(
 
         val (status, errorCode, message) =
             when (reason) {
-                "BLACKLISTED" ->
+                "BLACKLISTED" -> {
                     Triple(
                         HttpStatus.FORBIDDEN,
                         "BLACKLISTED",
                         "Your request has been blocked",
                     )
-                "RATE_LIMITED" ->
+                }
+
+                "RATE_LIMITED" -> {
                     Triple(
                         HttpStatus.TOO_MANY_REQUESTS,
                         "RATE_LIMITED",
                         "Rate limit exceeded",
                     )
-                else ->
+                }
+
+                else -> {
                     Triple(
                         HttpStatus.FORBIDDEN,
                         "ACCESS_DENIED",
                         "Access denied",
                     )
+                }
             }
 
         response.statusCode = status
