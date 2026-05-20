@@ -126,9 +126,3 @@ data class RateLimitConfig(
     val endpointMaxRequests: Long = 100,
     val windowSeconds: Long = 60,
 )
-
-enum class RateLimitType {
-    IP,
-    USER,
-    API_KEY,
-}

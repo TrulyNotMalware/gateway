@@ -3,8 +3,10 @@ package dev.notypie.gateway.modules.redis
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.awaitSingle
+import org.redisson.api.RScript
 import org.redisson.api.RedissonReactiveClient
 import org.redisson.api.options.KeysScanParams
+import org.redisson.client.codec.LongCodec
 import java.time.Duration
 
 val logger = KotlinLogging.logger { }
@@ -55,14 +57,27 @@ class ReactiveRedissonClientModule(
             logger.error { "Failed to get keys by pattern=$pattern, exception=${ex.message}" }
         }.getOrElse { emptySet() }
 
+    // Lua script ensures INCRBY + EXPIRE are atomic: the TTL is set only on the
+    // first increment of a window, and a crash between the two operations cannot
+    // leave the key without a TTL.
     override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long =
         runCatching {
-            val atomicLong = client.getAtomicLong(key)
-            val newValue = atomicLong.addAndGet(count).awaitSingle()
-            if (newValue == count) {
-                atomicLong.expire(Duration.ofSeconds(ttlSeconds)).awaitSingle()
-            }
-            newValue
+            client
+                .getScript(LongCodec.INSTANCE)
+                .eval<Long>(
+                    RScript.Mode.READ_WRITE,
+                    """
+                    local v = redis.call('INCRBY', KEYS[1], ARGV[1])
+                    if v == tonumber(ARGV[1]) then
+                        redis.call('EXPIRE', KEYS[1], ARGV[2])
+                    end
+                    return v
+                    """.trimIndent(),
+                    RScript.ReturnType.INTEGER,
+                    listOf(key),
+                    count.toString(),
+                    ttlSeconds.toString(),
+                ).awaitSingle()
         }.onFailure { ex ->
             logger.error { "Failed to increment key=$key count=$count, exception=${ex.message}" }
         }.getOrElse { 0L }

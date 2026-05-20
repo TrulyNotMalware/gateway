@@ -2,25 +2,25 @@ import org.gradle.kotlin.dsl.withType
 import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
 
 plugins {
-    kotlin("jvm") version "2.3.0"
-    kotlin("plugin.spring") version "2.3.0"
-    id("org.springframework.boot") version "4.0.1"
+    kotlin("jvm") version "2.3.21"
+    kotlin("plugin.spring") version "2.3.21"
+    id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
-    id("org.jlleitschuh.gradle.ktlint") version "14.0.1"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
 group = "dev.notypie"
 version = "alpha"
 
 // remove ext
-val springCloudVersion by extra("2025.1.0")
-val kotestVersion by extra("6.0.3")
-val mockkVersion by extra("1.14.6")
-val springBootVersion by extra("4.0.1")
-val redissonVersion by extra("3.51.0")
-val kotlinxVersion by extra("1.10.2")
+val springCloudVersion by extra("2025.1.1")
+val kotestVersion by extra("6.1.11")
+val mockkVersion by extra("1.14.9")
+val springBootVersion by extra("4.0.6")
+val redissonVersion by extra("3.52.0")
+val kotlinxVersion by extra("1.11.0")
 val reactorKotlinExtensionVersion by extra("1.3.0")
-val kotlinLoggingVersion by extra("7.0.13")
+val kotlinLoggingVersion by extra("7.0.14")
 
 repositories {
     mavenCentral()
@@ -40,7 +40,7 @@ kotlin {
             "-Xjsr305=strict",
             "-Xannotation-default-target=param-property",
             "-java-parameters",
-            "-Xjvm-default=all",
+            "-jvm-default=no-compatibility",
         )
     }
 }
@@ -73,6 +73,7 @@ dependencies {
     implementation(kotlin("reflect"))
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webflux")
+    implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-reactor-resilience4j")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
 

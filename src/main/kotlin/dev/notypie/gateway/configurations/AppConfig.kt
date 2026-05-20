@@ -21,7 +21,19 @@ const val APP_CONFIG_PROPERTIES_PREFIX = "app.config"
 data class AppConfig(
     val blacklist: Blacklist = Blacklist(),
     val redis: Redis = Redis(),
+    val security: Security = Security(),
 ) {
+    data class Security(
+        val timeoutMs: Long = 1000L,
+        val enableBlacklist: Boolean = true,
+        val enableRateLimit: Boolean = true,
+        val ipMaxRequests: Long = 1000L,
+        val userMaxRequests: Long = 500L,
+        val apiKeyMaxRequests: Long = 1000L,
+        val endpointMaxRequests: Long = 100L,
+        val windowSeconds: Long = 60L,
+    )
+
     data class Blacklist(
         val storageMode: StorageMode = StorageMode.IN_MEMORY,
     )
@@ -73,7 +85,6 @@ enum class FailedNodeDetectorType(
     val detector: FailedNodeDetector,
 ) {
     CONNECTION_DETECTOR(type = "FailedConnectionDetector", detector = FailedConnectionDetector()),
-    COMMANDS_TIMEOUT_DETECTOR(type = "FailedCommandsTimeoutDetector", detector = FailedConnectionDetector()),
     COMMANDS_DETECTOR(type = "FailedCommandsDetector", detector = FailedCommandsDetector()),
 }
 

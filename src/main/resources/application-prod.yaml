@@ -33,5 +33,33 @@ spring:
               filters:
                 - RewritePath=/dok/(?<segment>.*), /$\{segment}
 
+            - id: BLOG-FILTER
+              uri: ${BLOG-BE-URI}
+              predicates:
+                - Path=/v1/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: blog-be-cb
+                    fallbackUri: forward:/fallback/be
+                - name: LocalResponseCache
+                  args:
+                    size: 5MB
+                    timeToLive: 5s
+
 server:
   port: 80
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      blog-be-cb:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+  timelimiter:
+    instances:
+      blog-be-cb:
+        timeout-duration: 10s
