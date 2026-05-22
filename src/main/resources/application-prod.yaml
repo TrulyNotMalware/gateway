@@ -3,17 +3,38 @@ spring:
     activate:
       on-profile: "prod"
 
+  http:
+    codecs:
+      max-in-memory-size: 1MB
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
   cloud:
     gateway:
       server:
         webflux:
+          # k8s pod/service/ingress 네트워크(10.x, 172.16-31.x, 192.168.x, loopback) 를 신뢰.
+          trusted-proxies: "127\\.0\\.0\\.1|10\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*|192\\.168\\..*"
+          metrics:
+            enabled: true
           default-filters:
             - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+            - name: Retry
+              args:
+                retries: 1
+                methods: GET,HEAD,OPTIONS
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
           globalcors:
             cors-configurations:
               '[/**]':
                 allowed-origin-patterns:
-                  - ${PRJ-DOK-ORIGINS}
+                  - ${PRJ_DOK_ORIGINS}
                 allow-credentials: true
                 allowed-methods:
                   - PUT
@@ -22,22 +43,78 @@ spring:
                   - DELETE
                   - OPTIONS
                   - PATCH
+                allowed-headers:
+                  - "*"
+                exposed-headers:
+                  - X-Request-ID
+                  - X-RateLimit-Remaining
+                  - X-RateLimit-Reset
+                  - Retry-After
+                  - Content-Range
+                  - Accept-Ranges
+                  - Content-Disposition
+                  - Content-Length
+                max-age: 3600
           httpclient:
             connect-timeout: ${PROD_HTTP_CLIENT_CONNECT_TIMEOUT}
             response-timeout: ${PROD_HTTP_CLIENT_RESPONSE_TIMEOUT}
+
+            pool:
+              type: FIXED
+              max-connections: 200
+              acquire-timeout: 5000
+              max-idle-time: 30s
+              max-life-time: 60s
+              metrics: true
           routes:
             - id: PRJ-DOK-FILTER
-              uri: ${PRJ-DOK-URI}
+              uri: ${PRJ_DOK_URI}
               predicates:
                 - Path=/dok/**
               filters:
                 - RewritePath=/dok/(?<segment>.*), /$\{segment}
+                - RequestSize=5000000
+                - name: CircuitBreaker
+                  args:
+                    name: dok-cb
+                    fallbackUri: forward:/fallback/generic
 
-            - id: BLOG-FILTER
-              uri: ${BLOG-BE-URI}
+            - id: FILE-UPLOAD
+              uri: ${PRJ_FILE_URI}
               predicates:
-                - Path=/v1/**
+                - Path=/v1/files/upload/**
+                - Method=POST,PUT
+              metadata:
+                # 라우트별 timeout override (ms)
+                response-timeout: 300000
+                connect-timeout: 5000
               filters:
+                - RequestSize=104857600
+                - name: CircuitBreaker
+                  args:
+                    name: file-be-cb
+                    fallbackUri: forward:/fallback/generic
+
+            - id: FILE-DOWNLOAD
+              uri: ${PRJ_FILE_URI}
+              predicates:
+                - Path=/v1/files/**
+              metadata:
+                response-timeout: 120000
+                connect-timeout: 5000
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: file-be-cb
+                    fallbackUri: forward:/fallback/generic
+
+            - id: BLOG-CACHED
+              uri: ${PRJ_BE_URI}
+              predicates:
+                - Path=/v1/posts/**,/v1/tags/**,/v1/search/**
+                - Method=GET
+              filters:
+                - RequestSize=5000000
                 - name: CircuitBreaker
                   args:
                     name: blog-be-cb
@@ -47,8 +124,68 @@ spring:
                     size: 5MB
                     timeToLive: 5s
 
+            - id: BLOG-DEFAULT
+              uri: ${PRJ_BE_URI}
+              predicates:
+                - Path=/v1/**
+              filters:
+                - RequestSize=5000000
+                - name: CircuitBreaker
+                  args:
+                    name: blog-be-cb
+                    fallbackUri: forward:/fallback/be
+
 server:
-  port: 80
+  port: 8080
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+  compression:
+    enabled: true
+    mime-types:
+      - application/json
+      - application/xml
+      - text/html
+      - text/css
+      - text/plain
+      - application/javascript
+    min-response-size: 1KB
+
+  netty:
+    idle-timeout: 60s
+    connection-timeout: 5s
+    max-keep-alive-requests: 100
+    initial-buffer-size: 128
+    max-initial-line-length: 4KB
+    validate-headers: true
+
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: gateway
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
 resilience4j:
   circuitbreaker:
@@ -59,7 +196,47 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 5
         register-health-indicator: true
+      dok-cb:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
+
+      file-be-cb:
+        sliding-window-size: 20
+        failure-rate-threshold: 70
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        register-health-indicator: true
   timelimiter:
     instances:
       blog-be-cb:
         timeout-duration: 10s
+      dok-cb:
+        timeout-duration: 10s
+      file-be-cb:
+        timeout-duration: 300s
+
+app:
+  config:
+    jwt:
+      secret: ${APP_CONFIG_JWT_SECRET:}
+      issuer: ${APP_CONFIG_JWT_ISSUER:blog-be}
+    security:
+      enable-blacklist: true
+      enable-rate-limit: true
+
+      timeout-ms: 1000
+      ip-max-requests: 1000
+      user-max-requests: 500
+      api-key-max-requests: 1000
+      endpoint-max-requests: 100
+      window-seconds: 60
+
+      stripped-trust-headers:
+        - X-User-ID
+        - X-API-Key
+        - X-Internal-Auth
+    blacklist:
+      storage-mode: redis

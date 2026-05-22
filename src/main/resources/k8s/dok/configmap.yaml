@@ -4,8 +4,34 @@ metadata:
   name: api-gateway-cm
   namespace: api-service
 data:
-  PRJ-DOK-ORIGINS: "ORIGINS"
-  PROD_HTTP_CLIENT_CONNECT_TIMEOUT: "SECONDS"
-  PROD_HTTP_CLIENT_RESPONSE_TIMEOUT: "SECONDS"
-  PRJ-DOK-URI: "URI"
-  PRJ-BE-URI: "URI"
+  # ----- CORS -----
+  # Spring Boot relaxed binding: env PRJ_DOK_ORIGINS → ${PRJ_DOK_ORIGINS}. 하이픈 이름은 envFrom 에서 skip 되므로 언더스코어 사용.
+  PRJ_DOK_ORIGINS: "https://notypie.dev"
+
+  # ----- HTTP Client (밀리초) -----
+  PROD_HTTP_CLIENT_CONNECT_TIMEOUT: "3000"
+  PROD_HTTP_CLIENT_RESPONSE_TIMEOUT: "10000"
+
+  # ----- 다운스트림 서비스 k8s DNS -----
+  PRJ_DOK_URI: "http://dok-svc.dok.svc.cluster.local:8080"
+  PRJ_BE_URI: "http://blog-svc.blog.svc.cluster.local:8080"
+  # 파일 서비스 (추가 시점에 실제 svc DNS 로 교체)
+  PRJ_FILE_URI: "http://file-svc.file.svc.cluster.local:8080"
+
+  # ----- Spring Boot 기본 -----
+  SPRING_PROFILES_ACTIVE: "prod"
+
+  # JVM 옵션 - 컨테이너 리소스 인지 + G1GC
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+
+  # ----- Redis (rate limit / blacklist 분산 공유용) -----
+  # replicas >= 2 환경에서 Pod 간 카운터 동기화를 위해 standalone Redis 사용.
+  # 비밀번호는 Secret 으로 별도 주입 (APP_CONFIG_REDIS_PASSWORD).
+  APP_CONFIG_REDIS_MODE: "standalone"
+  APP_CONFIG_REDIS_HOST: "redis-svc.redis.svc.cluster.local"
+  APP_CONFIG_REDIS_PORT: "6379"
+  APP_CONFIG_BLACKLIST_STORAGE_MODE: "redis"
+
+  # ----- JWT (HS256, blog_be 와 동일 secret) -----
+  # Secret 은 별도 (APP_CONFIG_JWT_SECRET)
+  APP_CONFIG_JWT_ISSUER: "blog-be"

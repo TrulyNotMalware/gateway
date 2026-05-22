@@ -9,9 +9,6 @@ import org.redisson.api.RedissonClient
 import org.redisson.api.RedissonReactiveClient
 import org.redisson.codec.JsonJacksonCodec
 import org.redisson.config.Config
-import org.redisson.spring.starter.RedissonAutoConfigurationV2
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Conditional
 import org.springframework.context.annotation.Configuration
@@ -28,9 +25,12 @@ class RedisClusterConfiguration(
             Config().apply {
                 useClusterServers().apply {
                     // Base
-                    appConfig.redis.cluster.nodes
-                        .joinToString(",") { it }
-                        .also { addNodeAddress(it) }
+                    // addNodeAddress 는 vararg<String> — 노드 URI 를 개별 인수로 넘겨야 한다.
+                    // (이전 코드는 joinToString 으로 단일 문자열을 만들어 넘겨 MalformedURL 발생)
+                    addNodeAddress(
+                        *appConfig.redis.cluster.nodes
+                            .toTypedArray(),
+                    )
                     password = appConfig.redis.password
                     connectTimeout = appConfig.redis.connectTimeout
                     timeout = appConfig.redis.timeout
@@ -114,14 +114,22 @@ class RedisConfiguration(
         ReactiveRedissonClientModule(client = redissonReactiveClient)
 }
 
+// Redisson auto config 는 GatewayApplication 레벨에서 항상 exclude 됨 (Spring Boot 4 호환성). 본 클래스는 보존만 함.
 @Configuration
 @Conditional(OnDisableRedis::class)
-@EnableAutoConfiguration(exclude = [RedissonAutoConfigurationV2::class])
 class DisableRedis
 
+/**
+ * Redis 가 비활성화(NONE)이거나 blacklist storage 가 IN_MEMORY 일 때만 in-memory RedisModule 을 등록한다.
+ *
+ * 핵심: @Conditional(OnRedisDisabledOrInMemoryStorage::class) 가 없으면 RedisConfiguration/RedisClusterConfiguration
+ *      이 활성화돼서 `redisModule` 빈을 등록한 상태에서도 본 클래스가 같이 로딩되어 bean override 충돌이 발생한다.
+ *      (Spring Boot 4 기본값: spring.main.allow-bean-definition-overriding=false)
+ *      @ConditionalOnMissingBean 은 Spring 의 평가 순서상 동일 라운드에서 등록되는 빈에 대해 신뢰할 수 없다.
+ */
 @Configuration
+@Conditional(OnInMemoryRedisModule::class)
 class NoRedisConfiguration {
     @Bean
-    @ConditionalOnMissingBean(RedisModule::class)
     fun redisModule(): RedisModule = InMemoryModule()
 }

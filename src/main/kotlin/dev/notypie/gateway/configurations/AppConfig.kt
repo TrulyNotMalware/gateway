@@ -14,6 +14,7 @@ import tools.jackson.databind.cfg.DateTimeFeature
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinFeature
 import tools.jackson.module.kotlin.KotlinModule
+import com.fasterxml.jackson.databind.ObjectMapper as ClassicObjectMapper
 
 const val APP_CONFIG_PROPERTIES_PREFIX = "app.config"
 
@@ -32,6 +33,12 @@ data class AppConfig(
         val apiKeyMaxRequests: Long = 1000L,
         val endpointMaxRequests: Long = 100L,
         val windowSeconds: Long = 60L,
+        val strippedTrustHeaders: List<String> =
+            listOf(
+                "X-User-ID",
+                "X-API-Key",
+                "X-Internal-Auth",
+            ),
     )
 
     data class Blacklist(
@@ -90,15 +97,9 @@ enum class FailedNodeDetectorType(
 
 @Configuration
 class JacksonConfiguration {
-//    @Bean
-//    @Primary
-//    fun objectMapper(): ObjectMapper =
-//        ObjectMapper()
-//            .registerKotlinModule()
-//            .registerModules(Jdk8Module(), JavaTimeModule())
-//            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
-//            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-
+    /**
+     * tools.jackson (Jackson 3.x) 기반 JsonMapper. 애플리케이션 코드(SecurityFilter 등)가 사용.
+     */
     @Bean
     @Primary
     fun jsonMapper(): JsonMapper =
@@ -114,4 +115,14 @@ class JacksonConfiguration {
             ).enable(tools.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
             .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .build()
+
+    /**
+     * Classic Jackson 2.x ObjectMapper.
+     *
+     * Redisson 의 `JsonJacksonCodec` 가 `com.fasterxml.jackson.databind.ObjectMapper` 를 직접 요구해서
+     * Spring Boot 4 가 classic Jackson autoconfig 를 제공하지 않을 때를 대비해 명시적으로 등록.
+     * (Redis 가 활성화되지 않으면 어디서도 주입되지 않으므로 비용 거의 0)
+     */
+    @Bean
+    fun classicObjectMapper(): ClassicObjectMapper = ClassicObjectMapper()
 }

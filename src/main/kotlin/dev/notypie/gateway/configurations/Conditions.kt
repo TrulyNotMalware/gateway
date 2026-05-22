@@ -26,6 +26,17 @@ class OnRedisRequired : Condition {
 }
 
 /**
+ * InMemoryModule 을 사용해야 하는 조건. Redis mode=NONE 이거나 blacklist storage=IN_MEMORY 일 때.
+ * RedisConfiguration/RedisClusterConfiguration 의 활성화 조건과 완전히 mutually exclusive 해야 함.
+ */
+class OnInMemoryRedisModule : Condition {
+    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean {
+        val cfg = context.environment.extractAppConfig()
+        return cfg.redis.mode == RedisMode.NONE || cfg.blacklist.storageMode == StorageMode.IN_MEMORY
+    }
+}
+
+/**
  * A condition that determines if the Redis configuration is set to use a cluster mode.
  * This condition checks the application's configuration and evaluates if the Redis mode is
  * configured as [RedisMode.CLUSTER].

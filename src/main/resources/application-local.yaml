@@ -2,6 +2,77 @@ spring:
   config:
     activate:
       on-profile: "local"
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Local: 모든 IP 신뢰 (regex 전체 매치)
+          trusted-proxies: ".*"
+          httpclient:
+            connect-timeout: 3000
+            response-timeout: 10000
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns:
+                  - "http://localhost:*"
+                  - "http://127.0.0.1:*"
+                allow-credentials: true
+                allowed-methods:
+                  - PUT
+                  - GET
+                  - POST
+                  - DELETE
+                  - OPTIONS
+                  - PATCH
+                allowed-headers:
+                  - "*"
+                exposed-headers:
+                  - X-Request-ID
+                  - X-RateLimit-Remaining
+                  - X-RateLimit-Reset
+                  - Retry-After
 
 server:
   port: 8080
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway,metrics,env,configprops
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: gateway
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+app:
+  config:
+    # Local dev 용 dummy JWT secret. blog_be 로컬과 일치시키려면 같은 값 사용.
+    jwt:
+      secret: "local-dev-jwt-secret-please-replace-with-at-least-32-character-string"
+      issuer: "blog-be"
+    security:
+      enable-blacklist: false
+      enable-rate-limit: false
+      timeout-ms: 1000

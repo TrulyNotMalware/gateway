@@ -1,6 +1,5 @@
 package dev.notypie.gateway.filters.global
 
-import com.fasterxml.jackson.databind.json.JsonMapper
 import dev.notypie.gateway.configurations.AppConfig
 import dev.notypie.gateway.service.BlacklistService
 import dev.notypie.gateway.service.RateLimitConfig
@@ -23,6 +22,7 @@ import org.springframework.http.server.reactive.ServerHttpResponse
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
+import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
 
 @Component
@@ -34,6 +34,9 @@ class SecurityFilter(
 ) : GlobalFilter,
     Ordered {
     private val logger = KotlinLogging.logger {}
+
+    // 보안 결정(차단/허용) 은 별도 AUDIT logger 로 분리. logback 설정에서 별도 파일/인덱스로 라우팅 가능.
+    private val auditLogger = KotlinLogging.logger("AUDIT")
 
     override fun getOrder(): Int = -100
 
@@ -109,10 +112,14 @@ class SecurityFilter(
         userId: String?,
         apiKey: String?,
     ) {
-        logger.error {
-            "BLOCKED REQUEST - IP: $clientIp, UserID: $userId, APIKey: ${apiKey?.take(
-                8,
-            )}***, Reason: $reason"
+        val requestId = exchange.request.headers.getFirst("X-Request-ID") ?: "-"
+        val path =
+            exchange.request.path
+                .pathWithinApplication()
+                .value()
+        auditLogger.warn {
+            "decision=BLOCK reason=$reason ip=$clientIp userId=$userId " +
+                "apiKey=${apiKey?.take(8)?.let { "$it..." }} path=$path requestId=$requestId"
         }
 
         val (status, code, message) =
@@ -146,16 +153,13 @@ class SecurityFilter(
         }
     }
 
-    // Rightmost XFF entry is added by the trusted proxy (k8s ingress/LB).
-    // The leftmost entry can be spoofed by the client.
+    /**
+     * Client IP 산정 — Spring Cloud Gateway 의 trusted-proxies + server.forward-headers-strategy=framework
+     * 조합이 ServerHttpRequest.remoteAddress 를 *trusted proxy 체인을 제거한 첫 untrusted hop* 으로 채워준다.
+     *
+     * 따라서 X-Forwarded-For/X-Real-IP 를 직접 파싱하지 않고 remoteAddress 만 신뢰한다.
+     * 직접 파싱 방식은 trusted-proxies 검증 없이 raw header 를 받아 spoofing 위험이 있었다.
+     */
     private fun getClientIp(request: ServerHttpRequest): String =
-        request.headers
-            .getFirst("X-Forwarded-For")
-            ?.split(",")
-            ?.last()
-            ?.trim()
-            ?: request.headers.getFirst("X-Real-IP")
-            ?: request.headers.getFirst("X-Client-IP")
-            ?: request.remoteAddress?.address?.hostAddress
-            ?: "unknown"
+        request.remoteAddress?.address?.hostAddress ?: "unknown"
 }

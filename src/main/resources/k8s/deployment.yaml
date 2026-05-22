@@ -3,7 +3,16 @@ kind: Deployment
 metadata:
   name: api-gateway-deploy
   namespace: api-service
+  labels:
+    app: api-gateway-deploy
 spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: api-gateway-deploy
@@ -11,22 +20,123 @@ spec:
     metadata:
       labels:
         app: api-gateway-deploy
+      annotations:
+        # Prometheus 가 management 포트(8081) 의 /actuator/prometheus 를 스크랩하도록 명시.
+        # public 포트(80) 에는 actuator 가 노출되지 않음 (management.server.port=8081 로 분리).
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8081"
     spec:
       imagePullSecrets:
         - name: dockercred
+      # 진행 중 요청 마무리 시간 (server.shutdown=graceful + lifecycle.timeout-per-shutdown-phase=30s 와 정합)
+      terminationGracePeriodSeconds: 45
       containers:
         - name: api-gateway-deploy
           image: $IMAGE_NAME
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: mgmt
+              containerPort: 8081
+              protocol: TCP
           imagePullPolicy: Always
           volumeMounts:
             - name: tz-seoul
               mountPath: /etc/localtime
+              readOnly: true
           envFrom:
             - configMapRef:
                 name: api-gateway-cm
+            # Redis 비밀번호 등 민감 값은 Secret 으로 주입. Secret 의 키 이름은 ConfigMap 의 키와 동일하게 사용.
+            # 예: APP_CONFIG_REDIS_PASSWORD
+            - secretRef:
+                name: api-gateway-secret
+                optional: true
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          # k8s probes 는 cluster 내부에서 mgmt 포트(8081) 의 actuator health 를 호출.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: mgmt
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: mgmt
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: mgmt
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Pre-stop hook — k8s endpoints 갱신될 시간 확보 (트래픽 차단 후 graceful)
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: tz-seoul
           hostPath:
             path: /usr/share/zoneinfo/Asia/Seoul
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: api-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api-gateway-deploy
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway-hpa
+  namespace: api-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway-deploy
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 30
