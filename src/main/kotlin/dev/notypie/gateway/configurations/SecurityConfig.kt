@@ -20,22 +20,23 @@ import org.springframework.security.web.server.SecurityWebFilterChain
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Spring Security Resource Server + JWT 검증.
+ * Spring Security Resource Server + JWT verification.
  *
- * blog_be (FastAPI) 가 발급한 HS256 토큰을 동일한 secret 으로 검증.
- * 토큰 payload 가정:
- *   - sub : 사용자 식별자 (ADMIN_USERNAME)
- *   - iss : "blog-be" (또는 ConfigMap 의 JWT_ISSUER)
- *   - exp : 만료
- *   - typ : "access" (refresh 토큰은 거부)
+ * Verifies the HS256 token issued by blog_be (FastAPI) using the same shared secret.
+ * Expected token payload:
+ *   - sub : user identifier (ADMIN_USERNAME)
+ *   - iss : "blog-be" (or the ConfigMap's JWT_ISSUER)
+ *   - exp : expiry
+ *   - typ : "access" (refresh tokens are rejected)
  *
- * Gateway 가 검증한 sub 는 [dev.notypie.gateway.filters.global.JwtUserIdInjectionFilter] 가
- * 다운스트림으로 X-User-ID 헤더로 박는다. (TrustHeaderStripFilter 가 외부 입력은 이미 제거)
+ * The verified `sub` is stamped into the X-User-ID header by
+ * [dev.notypie.gateway.filters.global.JwtUserIdInjectionFilter] (TrustHeaderStripFilter has already
+ * removed any external input).
  *
- * 인가 정책:
+ * Authorization policy:
  *   - public: GET `/v1/posts/`, `/v1/tags/`, `/v1/search/`, POST `/v1/auth/login`, `/v1/auth/refresh`,
- *             `/fallback/`, `/actuator/` (mgmt 포트는 별개지만 안전상 명시)
- *   - 그 외 `/v1/`: authenticated 필요
+ *             `/fallback/`, `/actuator/` (mgmt port is separate but listed for safety)
+ *   - everything else under `/v1/`: requires authentication
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -50,7 +51,7 @@ class SecurityConfig(
     @Bean
     fun springSecurityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
         http
-            .csrf { it.disable() } // Stateless API gateway — CSRF 토큰 무의미
+            .csrf { it.disable() } // Stateless API gateway — CSRF tokens are not meaningful.
             .formLogin { it.disable() }
             .httpBasic { it.disable() }
             .logout { it.disable() }
@@ -75,7 +76,7 @@ class SecurityConfig(
     }
 
     /**
-     * HS256 + 공유 secret. validators: 표준(timestamp + iss) + access 토큰 typ 검증.
+     * HS256 + shared secret. Validators: standard (timestamp + iss) plus access-token `typ` check.
      */
     @Bean
     fun jwtDecoder(): NimbusReactiveJwtDecoder {
@@ -83,10 +84,10 @@ class SecurityConfig(
             "app.config.jwt.secret must be configured (env: APP_CONFIG_JWT_SECRET)"
         }
         val secretBytes = jwtSecret.toByteArray(Charsets.UTF_8)
-        // HS256 안전성 권고치: 최소 256-bit(32 bytes). RFC 7518 §3.2.
+        // HS256 minimum-security recommendation: 256-bit (32 bytes). RFC 7518 §3.2.
         require(secretBytes.size >= MIN_HS256_SECRET_BYTES) {
             "app.config.jwt.secret must be at least $MIN_HS256_SECRET_BYTES bytes (got ${secretBytes.size}). " +
-                "HS256 권장 안전성을 위해 32 bytes 이상 사용."
+                "Use 32+ bytes to meet the HS256 security recommendation."
         }
         val secretKey = SecretKeySpec(secretBytes, MacAlgorithm.HS256.name)
         val decoder =
@@ -106,8 +107,8 @@ class SecurityConfig(
     }
 
     /**
-     * 인증된 principal name 을 JWT 의 `sub` 클레임으로 통일. ReactiveJwtAuthenticationConverter 기본도
-     * sub 를 쓰지만, 명시적으로 지정해 향후 클레임 매핑이 바뀌더라도 깨지지 않게 한다.
+     * Pin the authenticated principal name to the JWT `sub` claim. ReactiveJwtAuthenticationConverter
+     * defaults to `sub` already, but we set it explicitly to stay stable if the claim mapping ever changes.
      */
     @Bean
     fun jwtAuthConverter(): ReactiveJwtAuthenticationConverter {
@@ -122,7 +123,8 @@ class SecurityConfig(
 }
 
 /**
- * `typ` 클레임이 "access" 인지 검증. blog_be 는 access/refresh 토큰을 발급하는데, gateway 는 access 만 받아야 한다.
+ * Verify that the `typ` claim is "access". blog_be issues both access and refresh tokens; the gateway
+ * must only accept access tokens.
  */
 class AccessTokenTypeValidator : OAuth2TokenValidator<Jwt> {
     override fun validate(token: Jwt): OAuth2TokenValidatorResult {
@@ -136,7 +138,7 @@ class AccessTokenTypeValidator : OAuth2TokenValidator<Jwt> {
     }
 
     companion object {
-        // blog_be (PyJWT) 가 _issue() 에서 박는 access 토큰 식별자와 동일해야 함.
+        // Must match the access-token identifier blog_be (PyJWT) stamps in `_issue()`.
         const val ACCESS_TOKEN_TYPE = "access"
     }
 }

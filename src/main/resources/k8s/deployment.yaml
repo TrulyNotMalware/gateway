@@ -21,15 +21,15 @@ spec:
       labels:
         app: api-gateway-deploy
       annotations:
-        # Prometheus 가 management 포트(8081) 의 /actuator/prometheus 를 스크랩하도록 명시.
-        # public 포트(80) 에는 actuator 가 노출되지 않음 (management.server.port=8081 로 분리).
+        # Direct Prometheus to scrape /actuator/prometheus on the management port (8081).
+        # Actuator is not exposed on the public port (80); management.server.port=8081 keeps them separate.
         prometheus.io/scrape: "true"
         prometheus.io/path: "/actuator/prometheus"
         prometheus.io/port: "8081"
     spec:
       imagePullSecrets:
         - name: dockercred
-      # 진행 중 요청 마무리 시간 (server.shutdown=graceful + lifecycle.timeout-per-shutdown-phase=30s 와 정합)
+      # Graceful drain budget for in-flight requests (matches server.shutdown=graceful + lifecycle.timeout-per-shutdown-phase=30s).
       terminationGracePeriodSeconds: 45
       containers:
         - name: api-gateway-deploy
@@ -49,8 +49,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: api-gateway-cm
-            # Redis 비밀번호 등 민감 값은 Secret 으로 주입. Secret 의 키 이름은 ConfigMap 의 키와 동일하게 사용.
-            # 예: APP_CONFIG_REDIS_PASSWORD
+            # Sensitive values (e.g. Redis password) come from Secret. Secret keys must match ConfigMap keys,
+            # e.g. APP_CONFIG_REDIS_PASSWORD.
             - secretRef:
                 name: api-gateway-secret
                 optional: true
@@ -61,7 +61,7 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
-          # k8s probes 는 cluster 내부에서 mgmt 포트(8081) 의 actuator health 를 호출.
+          # k8s probes hit the management port (8081) actuator health from inside the cluster.
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -82,7 +82,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
-          # Pre-stop hook — k8s endpoints 갱신될 시간 확보 (트래픽 차단 후 graceful)
+          # Pre-stop hook — give k8s endpoints time to converge (drain traffic before graceful shutdown).
           lifecycle:
             preStop:
               exec:

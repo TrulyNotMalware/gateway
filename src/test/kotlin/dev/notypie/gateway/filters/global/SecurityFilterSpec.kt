@@ -22,7 +22,7 @@ class SecurityFilterSpec :
 
         val jsonMapper: JsonMapper = JsonMapper.builder().build()
 
-        given("Blacklist=on, RateLimit=on 인 SecurityFilter") {
+        given("SecurityFilter with Blacklist=on, RateLimit=on") {
             val cfg =
                 AppConfig(
                     security =
@@ -41,7 +41,7 @@ class SecurityFilterSpec :
             val rateLimit = RateLimitService(InMemoryModule())
             val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper)
 
-            `when`("정상 요청이 한 번 들어오면") {
+            `when`("a single normal request arrives") {
                 val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 var passed = false
                 val chain =
@@ -50,13 +50,13 @@ class SecurityFilterSpec :
                         Mono.empty()
                     }
                 filter.filter(ex, chain).awaitSingleOrNull()
-                then("체인이 통과하고 응답 헤더에 RateLimit 정보가 박힌다") {
+                then("the chain passes and RateLimit info is stamped on the response headers") {
                     passed shouldBe true
                     ex.response.headers.getFirst("X-RateLimit-Remaining") shouldNotBe null
                 }
             }
 
-            `when`("IP 가 블랙리스트에 있으면") {
+            `when`("the IP is blacklisted") {
                 blacklist.addIpToBlacklist("9.9.9.9")
                 val ex =
                     MockServerWebExchange.from(
@@ -71,7 +71,7 @@ class SecurityFilterSpec :
                         Mono.empty()
                     }
                 filter.filter(ex, chain).awaitSingleOrNull()
-                then("체인 통과가 차단되고 403 반환") {
+                then("the chain is blocked and 403 is returned") {
                     passed shouldBe false
                     ex.response.statusCode shouldBe HttpStatus.FORBIDDEN
                     val body = ex.response.bodyAsString.awaitSingleOrNull() ?: ""
@@ -79,7 +79,7 @@ class SecurityFilterSpec :
                 }
             }
 
-            `when`("IP limit 을 초과하면") {
+            `when`("the IP rate limit is exceeded") {
                 val warmup =
                     MockServerWebExchange.from(
                         MockServerHttpRequest
@@ -101,14 +101,14 @@ class SecurityFilterSpec :
                         Mono.empty()
                     }
                 filter.filter(ex, chain).awaitSingleOrNull()
-                then("두 번째 요청은 429 차단") {
+                then("the second request is blocked with 429") {
                     passed shouldBe false
                     ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
                 }
             }
         }
 
-        given("Security 가 모두 비활성화된 경우") {
+        given("SecurityFilter with all checks disabled") {
             val cfg =
                 AppConfig(
                     security =
@@ -125,7 +125,7 @@ class SecurityFilterSpec :
                     jsonMapper,
                 )
 
-            `when`("어떤 요청이 들어와도") {
+            `when`("any request arrives") {
                 val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 var passed = false
                 filter
@@ -136,7 +136,7 @@ class SecurityFilterSpec :
                             Mono.empty()
                         },
                     ).awaitSingleOrNull()
-                then("체인을 그대로 통과") {
+                then("the chain passes through") {
                     passed shouldBe true
                 }
             }

@@ -35,7 +35,7 @@ class SecurityFilter(
     Ordered {
     private val logger = KotlinLogging.logger {}
 
-    // 보안 결정(차단/허용) 은 별도 AUDIT logger 로 분리. logback 설정에서 별도 파일/인덱스로 라우팅 가능.
+    // Block/allow decisions go to a dedicated AUDIT logger so logback can route them to a separate file/index.
     private val auditLogger = KotlinLogging.logger("AUDIT")
 
     override fun getOrder(): Int = -100
@@ -154,11 +154,12 @@ class SecurityFilter(
     }
 
     /**
-     * Client IP 산정 — Spring Cloud Gateway 의 trusted-proxies + server.forward-headers-strategy=framework
-     * 조합이 ServerHttpRequest.remoteAddress 를 *trusted proxy 체인을 제거한 첫 untrusted hop* 으로 채워준다.
+     * Resolve the client IP — Spring Cloud Gateway's `trusted-proxies` plus
+     * `server.forward-headers-strategy=framework` populates `ServerHttpRequest.remoteAddress`
+     * with the first untrusted hop after stripping the trusted-proxy chain.
      *
-     * 따라서 X-Forwarded-For/X-Real-IP 를 직접 파싱하지 않고 remoteAddress 만 신뢰한다.
-     * 직접 파싱 방식은 trusted-proxies 검증 없이 raw header 를 받아 spoofing 위험이 있었다.
+     * We therefore trust `remoteAddress` rather than parsing X-Forwarded-For / X-Real-IP directly.
+     * Direct parsing would accept raw client headers without trusted-proxy validation and enable spoofing.
      */
     private fun getClientIp(request: ServerHttpRequest): String =
         request.remoteAddress?.address?.hostAddress ?: "unknown"

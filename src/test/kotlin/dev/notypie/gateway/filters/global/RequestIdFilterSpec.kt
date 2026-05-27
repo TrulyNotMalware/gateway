@@ -16,7 +16,7 @@ class RequestIdFilterSpec :
         given("RequestIdFilter") {
             val filter = RequestIdFilter()
 
-            `when`("요청에 X-Request-ID 헤더가 없으면") {
+            `when`("the request has no X-Request-ID header") {
                 val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 var downstream: ServerWebExchange? = null
                 val chain =
@@ -27,7 +27,7 @@ class RequestIdFilterSpec :
                 filter.filter(exchange, chain).awaitSingleOrNull()
                 exchange.response.setComplete().awaitSingleOrNull()
 
-                then("UUID 가 생성되어 다운스트림 요청과 응답 헤더에 모두 박힌다") {
+                then("a generated UUID is propagated downstream and echoed on the response") {
                     val downstreamId = downstream!!.request.headers.getFirst("X-Request-ID")
                     val responseId = exchange.response.headers.getFirst("X-Request-ID")
                     downstreamId shouldNotBe null
@@ -35,7 +35,7 @@ class RequestIdFilterSpec :
                 }
             }
 
-            `when`("요청이 유효한 X-Request-ID 헤더를 가지고 있으면") {
+            `when`("the request carries a valid X-Request-ID header") {
                 val existing = "req-abc-123"
                 val exchange =
                     MockServerWebExchange.from(
@@ -50,13 +50,13 @@ class RequestIdFilterSpec :
                 filter.filter(exchange, chain).awaitSingleOrNull()
                 exchange.response.setComplete().awaitSingleOrNull()
 
-                then("기존 값이 그대로 전파된다") {
+                then("the supplied value is propagated as-is") {
                     downstream!!.request.headers.getFirst("X-Request-ID") shouldBe existing
                     exchange.response.headers.getFirst("X-Request-ID") shouldBe existing
                 }
             }
 
-            `when`("외부에서 박힌 X-Request-ID 가 너무 길거나 허용 안되는 문자를 포함하면") {
+            `when`("an external X-Request-ID is too long or contains disallowed characters") {
                 val bad = "x".repeat(300)
                 val injection = "abc\r\nSet-Cookie: evil=1"
                 val exA =
@@ -86,7 +86,7 @@ class RequestIdFilterSpec :
                         },
                     ).awaitSingleOrNull()
 
-                then("악성 입력은 무시되고 새 UUID 가 사용된다") {
+                then("malicious input is rejected and a fresh UUID is used") {
                     dsA!!.request.headers.getFirst("X-Request-ID") shouldNotBe bad
                     dsA!!.request.headers.getFirst("X-Request-ID") shouldNotBe null
                     dsB!!.request.headers.getFirst("X-Request-ID") shouldNotBe injection

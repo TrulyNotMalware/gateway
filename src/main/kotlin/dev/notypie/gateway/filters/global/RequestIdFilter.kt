@@ -9,21 +9,21 @@ import reactor.core.publisher.Mono
 import java.util.UUID
 
 /**
- * X-Request-ID 헤더를 모든 요청에 보장한다.
+ * Ensures every request carries an X-Request-ID header.
  *
- * - 외부에서 헤더를 박아오면 *검증 통과한 경우에만* 그대로 사용 (분산 추적과의 연결).
- * - 검증 실패하거나 헤더가 없으면 UUID 를 새로 생성.
- * - 다운스트림으로 propagate + 응답에도 박는다.
+ * - If the client supplies the header, reuse it *only if it passes validation* (to preserve distributed-trace linking).
+ * - If validation fails or the header is missing, generate a fresh UUID.
+ * - Propagate downstream and echo on the response.
  *
- * 검증 규칙: 길이 1..128, [a-zA-Z0-9-_] 만 허용. 로그 인젝션 / 헤더 스머글링 방지.
+ * Validation: length 1..128, only [a-zA-Z0-9-_]. Prevents log injection and header smuggling.
  *
- * WebFilter 로 구현하여 gateway 라우팅 뿐 아니라 actuator/error 응답에도 적용된다.
+ * Implemented as a WebFilter so it covers actuator/error responses, not just gateway-routed traffic.
  */
 @Component
 class RequestIdFilter :
     WebFilter,
     Ordered {
-    // 모든 다른 필터 시작 전에 동작해야 X-Request-ID 가 로그·다운스트림에서 일관되게 사용 가능
+    // Must run before all other filters so X-Request-ID is consistent across logs and downstream calls.
     override fun getOrder(): Int = Ordered.HIGHEST_PRECEDENCE + 10
 
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {

@@ -18,7 +18,7 @@ class FallbackController {
         unavailable(target = "downstream", exchange = exchange)
 
     private fun unavailable(target: String, exchange: ServerWebExchange): ResponseEntity<Map<String, String?>> {
-        // RequestIdFilter (WebFilter) 가 검증·박은 X-Request-ID 값을 그대로 포함.
+        // Echo the X-Request-ID value validated and stamped by RequestIdFilter (WebFilter).
         val requestId = exchange.request.headers.getFirst("X-Request-ID")
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
             mapOf(

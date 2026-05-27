@@ -4,9 +4,9 @@ ARG JAR_FILE_NAME=gateway-alpha
 ARG SERVER_PORT=8080
 ARG MANAGEMENT_PORT=8081
 
-ARG PROFILES="prod"
-ENV PROFILE=${PROFILES}
 COPY ./build/libs/$JAR_FILE_NAME.jar /app.jar
 
 EXPOSE $SERVER_PORT $MANAGEMENT_PORT
-ENTRYPOINT exec java -jar -Dspring.profiles.active=${PROFILE} -Duser.timezone=Asia/Seoul /app.jar
+# exec (JSON) form: java becomes PID 1 → SIGTERM 이 JVM 까지 전달 → graceful shutdown 동작.
+# Spring profile 은 SPRING_PROFILES_ACTIVE env (configmap) 로 설정.
+ENTRYPOINT ["java", "-jar", "-Duser.timezone=Asia/Seoul", "/app.jar"]

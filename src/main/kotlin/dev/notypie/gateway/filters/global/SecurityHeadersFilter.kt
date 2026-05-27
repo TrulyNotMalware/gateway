@@ -8,10 +8,10 @@ import org.springframework.web.server.WebFilterChain
 import reactor.core.publisher.Mono
 
 /**
- * 모든 응답에 보안 헤더를 부착한다.
+ * Attaches security headers to every response.
  *
- * WebFilter 로 구현했기 때문에 게이트웨이 라우팅된 트래픽 뿐만 아니라 actuator, 에러 응답 등
- * 모든 outbound 응답에 헤더가 적용된다.
+ * Implemented as a WebFilter so the headers apply to all outbound responses — not just
+ * gateway-routed traffic but also actuator responses, error responses, etc.
  */
 @Component
 class SecurityHeadersFilter :

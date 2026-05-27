@@ -10,12 +10,12 @@ import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 
 /**
- * 본 필터의 positive path(인증된 SecurityContext → X-User-ID 헤더 주입)는
- * Spring WebFlux 의 reactor Context 전파에 의존하므로 unit 테스트에서 안정적으로 재현하기 어렵다.
- * 그 부분은 prod 부팅 smoke test 에서 실제 JWT 토큰으로 검증한다.
+ * The positive path (authenticated SecurityContext → X-User-ID injection) depends on Spring WebFlux's
+ * reactor Context propagation and is hard to reproduce reliably in unit tests. That branch is covered
+ * by the prod boot smoke test with a real JWT.
  *
- * 본 spec 은 인증 정보가 없는 경우 (public path) 의 negative 동작만 보장한다 —
- * 헤더가 추가되지 않고 체인이 그대로 통과해야 함.
+ * This spec only guards the negative path (public path, no authentication): no header is added and
+ * the chain passes through unchanged.
  */
 class JwtUserIdInjectionFilterSpec :
     BehaviorSpec({
@@ -23,7 +23,7 @@ class JwtUserIdInjectionFilterSpec :
         given("JwtUserIdInjectionFilter") {
             val filter = JwtUserIdInjectionFilter()
 
-            `when`("SecurityContext 에 인증 정보가 없으면 (public path)") {
+            `when`("SecurityContext has no authentication (public path)") {
                 val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 var downstream: ServerWebExchange? = null
                 val chain =
@@ -34,7 +34,7 @@ class JwtUserIdInjectionFilterSpec :
 
                 filter.filter(exchange, chain).awaitSingleOrNull()
 
-                then("X-User-ID 가 박히지 않고 체인이 그대로 통과한다") {
+                then("no X-User-ID is stamped and the chain passes through") {
                     downstream shouldBe exchange
                     downstream!!.request.headers.getFirst("X-User-ID") shouldBe null
                 }

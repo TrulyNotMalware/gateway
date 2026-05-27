@@ -11,18 +11,17 @@ import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 
 /**
- * Gateway 가 JWT 검증한 사용자 식별자(sub) 를 `X-User-ID` 헤더로 다운스트림에 박는다.
+ * Stamps the JWT-verified user identifier (`sub`) into the `X-User-ID` header forwarded downstream.
  *
- * 신뢰 모델 / 필터 순서:
- * 1. SecurityConfig 의 JWT WebFilter 가 인증 검증 → ReactiveSecurityContextHolder 에 JwtAuthenticationToken 박음.
- * 2. [TrustHeaderStripFilter] (GlobalFilter, order=-200) 가 외부 입력 X-User-ID 를 *제거*.
- * 3. 본 필터 (GlobalFilter, order=-150) 가 인증된 sub 를 *검증된 X-User-ID* 로 다시 박음.
- * 4. [SecurityFilter] (GlobalFilter, order=-100) 가 blacklist/rate-limit 체크 시 그 userId 활용.
- * 5. 다운스트림 (blog-be, file-be 등) 이 X-User-ID 를 신뢰.
+ * Trust model / filter ordering:
+ * 1. SecurityConfig's JWT WebFilter authenticates → ReactiveSecurityContextHolder holds a JwtAuthenticationToken.
+ * 2. [TrustHeaderStripFilter] (GlobalFilter, order=-200) *removes* any externally supplied X-User-ID.
+ * 3. This filter (GlobalFilter, order=-150) re-stamps the authenticated `sub` as a *verified* X-User-ID.
+ * 4. [SecurityFilter] (GlobalFilter, order=-100) uses that userId for blacklist / rate-limit checks.
+ * 5. Downstream services (blog-be, file-be, ...) trust X-User-ID.
  *
- * 핵심: WebFilter 가 아닌 *GlobalFilter* 로 둬야 한다. WebFilter 는 Gateway 체인 *앞* 에서 동작하므로,
- *      WebFilter 에서 박은 헤더는 TrustHeaderStripFilter(GlobalFilter) 가 다시 strip 해 다운스트림에 도달 못 한다.
- *      (1차 적용 시 WebFilter 였던 게 codex 리뷰에서 잡힘.)
+ * Must be a *GlobalFilter*, not a WebFilter: WebFilter runs *before* the gateway chain, so a header
+ * stamped there would be stripped again by TrustHeaderStripFilter (GlobalFilter) before reaching downstream.
  */
 @Component
 class JwtUserIdInjectionFilter :
@@ -30,7 +29,7 @@ class JwtUserIdInjectionFilter :
     Ordered {
     private val logger = KotlinLogging.logger("AUDIT")
 
-    // TrustHeaderStripFilter(-200) 와 SecurityFilter(-100) 의 사이.
+    // Between TrustHeaderStripFilter(-200) and SecurityFilter(-100).
     override fun getOrder(): Int = -150
 
     override fun filter(exchange: ServerWebExchange, chain: GatewayFilterChain): Mono<Void> =
@@ -44,7 +43,7 @@ class JwtUserIdInjectionFilter :
                     Mono.empty()
                 }
             }.flatMap { auth ->
-                val sub = auth.name ?: return@flatMap chain.filter(exchange)
+                val sub = auth.name
                 logger.debug { "JWT auth — propagating X-User-ID=$sub path=${exchange.request.path}" }
                 val mutated =
                     exchange

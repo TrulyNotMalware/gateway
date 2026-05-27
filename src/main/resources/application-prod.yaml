@@ -14,7 +14,7 @@ spring:
     gateway:
       server:
         webflux:
-          # k8s pod/service/ingress 네트워크(10.x, 172.16-31.x, 192.168.x, loopback) 를 신뢰.
+          # Trust k8s pod/service/ingress networks (10.x, 172.16-31.x, 192.168.x, loopback).
           trusted-proxies: "127\\.0\\.0\\.1|10\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*|192\\.168\\..*"
           metrics:
             enabled: true
@@ -85,7 +85,7 @@ spring:
                 - Path=/v1/files/upload/**
                 - Method=POST,PUT
               metadata:
-                # 라우트별 timeout override (ms)
+                # Per-route timeout override (ms).
                 response-timeout: 300000
                 connect-timeout: 5000
               filters:
@@ -238,5 +238,7 @@ app:
         - X-User-ID
         - X-API-Key
         - X-Internal-Auth
+        - X-Gateway-Auth
+      gateway-shared-secret: ${APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET:}
     blacklist:
       storage-mode: redis

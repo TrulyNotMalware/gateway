@@ -5,10 +5,10 @@ import jakarta.annotation.PostConstruct
 import org.springframework.stereotype.Component
 
 /**
- * AppConfig 의 invalid 조합을 부팅 시점에 fail-fast 한다.
+ * Fail-fast on invalid AppConfig combinations at startup.
  *
- * 예: `blacklist.storage-mode=redis` + `redis.mode=none` 처럼 Redis 를 요구하면서도 Redis 가 꺼진 경우.
- * 이 조합은 in-memory fallback 으로 조용히 기동되어 multi-pod 동기화 보장이 사라지는 위험이 있다.
+ * Example: `blacklist.storage-mode=redis` + `redis.mode=none` — Redis is required yet disabled.
+ * Such a combination would silently fall back to in-memory storage and lose multi-pod synchronization.
  */
 @Component
 class AppConfigValidator(
@@ -25,7 +25,8 @@ class AppConfigValidator(
             throw IllegalStateException(
                 "Invalid configuration: app.config.blacklist.storage-mode=REDIS requires " +
                     "app.config.redis.mode to be STANDALONE or CLUSTER (current: NONE). " +
-                    "이대로 두면 in-memory fallback 으로 기동되어 multi-pod 환경에서 blacklist 가 분리됩니다.",
+                    "Leaving it as is would silently fall back to in-memory storage and split the " +
+                    "blacklist across pods.",
             )
         }
 

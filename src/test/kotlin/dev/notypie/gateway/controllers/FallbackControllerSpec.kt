@@ -12,7 +12,7 @@ class FallbackControllerSpec :
         given("FallbackController") {
             val controller = FallbackController()
 
-            `when`("/fallback/be 가 호출되면") {
+            `when`("/fallback/be is called") {
                 val exchange =
                     MockServerWebExchange.from(
                         MockServerHttpRequest
@@ -20,7 +20,7 @@ class FallbackControllerSpec :
                             .header("X-Request-ID", "req-be-123"),
                     )
                 val resp = controller.blogFallback(exchange)
-                then("503 + 정형 body 반환 + requestId 포함") {
+                then("returns 503 with a structured body including requestId") {
                     resp.statusCode shouldBe HttpStatus.SERVICE_UNAVAILABLE
                     val body = resp.body!!
                     body["code"] shouldBe "CIRCUIT_OPEN"
@@ -30,10 +30,10 @@ class FallbackControllerSpec :
                 }
             }
 
-            `when`("/fallback/generic 이 X-Request-ID 없이 호출되면") {
+            `when`("/fallback/generic is called without X-Request-ID") {
                 val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/fallback/generic"))
                 val resp = controller.genericFallback(exchange)
-                then("503 + downstream target + requestId=null") {
+                then("returns 503 with target=downstream and requestId=null") {
                     resp.statusCode shouldBe HttpStatus.SERVICE_UNAVAILABLE
                     resp.body!!["target"] shouldBe "downstream"
                     resp.body!!["requestId"] shouldBe null

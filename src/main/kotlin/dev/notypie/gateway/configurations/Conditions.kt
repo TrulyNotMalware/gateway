@@ -26,8 +26,9 @@ class OnRedisRequired : Condition {
 }
 
 /**
- * InMemoryModule 을 사용해야 하는 조건. Redis mode=NONE 이거나 blacklist storage=IN_MEMORY 일 때.
- * RedisConfiguration/RedisClusterConfiguration 의 활성화 조건과 완전히 mutually exclusive 해야 함.
+ * Selects InMemoryModule when redis.mode=NONE or blacklist.storage=IN_MEMORY.
+ * Must be strictly mutually exclusive with the activation conditions of
+ * RedisConfiguration / RedisClusterConfiguration.
  */
 class OnInMemoryRedisModule : Condition {
     override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean {

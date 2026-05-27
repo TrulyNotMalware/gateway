@@ -23,7 +23,7 @@ class LoggingFilter :
             val request = exchange.request
             val start = System.currentTimeMillis()
             val requestId = request.headers.getFirst("X-Request-ID") ?: "-"
-            // trusted-proxies + forward-headers-strategy=framework 가 remoteAddress 에 이미 client IP 를 채워준다.
+            // trusted-proxies + forward-headers-strategy=framework already populates remoteAddress with the client IP.
             val ip = request.remoteAddress?.address?.hostAddress ?: "-"
 
             try {

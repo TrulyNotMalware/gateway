@@ -9,11 +9,13 @@ import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 
 /**
- * Gateway 가 신뢰하는 헤더(예: X-User-ID, X-API-Key) 가 외부 클라이언트로부터 들어오는 경우를 1선에서 제거한다.
+ * Strips gateway-trusted headers (e.g. X-User-ID, X-API-Key) that arrive from external clients.
  *
- * - 다운스트림이 이 헤더들을 "Gateway 가 검증해서 박은 값" 으로 신뢰하기 때문에, 외부 입력을 그대로 전달하면 스푸핑 위험.
- * - 인증 자체(JWT 검증 → X-User-ID 주입) 는 별도 필터에서 처리하고, 본 필터는 *입력 sanitize* 만 담당한다.
- * - SecurityFilter 보다 *먼저* 동작하도록 우선순위는 매우 높게 둔다 (-200).
+ * - Downstream services trust these headers as "values stamped by the gateway after verification";
+ *   forwarding external input directly would enable spoofing.
+ * - Authentication itself (JWT verification → X-User-ID injection) is handled by a separate filter;
+ *   this filter only handles *input sanitization*.
+ * - Runs *before* SecurityFilter via a very high priority (-200).
  */
 @Component
 class TrustHeaderStripFilter(

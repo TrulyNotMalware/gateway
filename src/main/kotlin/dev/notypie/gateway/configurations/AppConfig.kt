@@ -38,7 +38,10 @@ data class AppConfig(
                 "X-User-ID",
                 "X-API-Key",
                 "X-Internal-Auth",
+                "X-Gateway-Auth",
             ),
+        val gatewaySharedSecret: String = "",
+        val failOpenOnRedisFailure: Boolean = true,
     )
 
     data class Blacklist(
@@ -98,7 +101,7 @@ enum class FailedNodeDetectorType(
 @Configuration
 class JacksonConfiguration {
     /**
-     * tools.jackson (Jackson 3.x) 기반 JsonMapper. 애플리케이션 코드(SecurityFilter 등)가 사용.
+     * tools.jackson (Jackson 3.x) JsonMapper consumed by application code (e.g. SecurityFilter).
      */
     @Bean
     @Primary
@@ -119,9 +122,9 @@ class JacksonConfiguration {
     /**
      * Classic Jackson 2.x ObjectMapper.
      *
-     * Redisson 의 `JsonJacksonCodec` 가 `com.fasterxml.jackson.databind.ObjectMapper` 를 직접 요구해서
-     * Spring Boot 4 가 classic Jackson autoconfig 를 제공하지 않을 때를 대비해 명시적으로 등록.
-     * (Redis 가 활성화되지 않으면 어디서도 주입되지 않으므로 비용 거의 0)
+     * Redisson's `JsonJacksonCodec` requires `com.fasterxml.jackson.databind.ObjectMapper` directly.
+     * Register it explicitly in case Spring Boot 4 no longer auto-configures the classic Jackson stack.
+     * (When Redis is disabled this bean is never injected, so the cost is effectively zero.)
      */
     @Bean
     fun classicObjectMapper(): ClassicObjectMapper = ClassicObjectMapper()

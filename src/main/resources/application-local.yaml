@@ -8,7 +8,7 @@ spring:
     gateway:
       server:
         webflux:
-          # Local: 모든 IP 신뢰 (regex 전체 매치)
+          # Local: trust all IPs (regex matches everything).
           trusted-proxies: ".*"
           httpclient:
             connect-timeout: 3000
@@ -68,7 +68,6 @@ management:
 
 app:
   config:
-    # Local dev 용 dummy JWT secret. blog_be 로컬과 일치시키려면 같은 값 사용.
     jwt:
       secret: "local-dev-jwt-secret-please-replace-with-at-least-32-character-string"
       issuer: "blog-be"

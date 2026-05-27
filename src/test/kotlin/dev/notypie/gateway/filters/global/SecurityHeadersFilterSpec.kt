@@ -14,13 +14,13 @@ class SecurityHeadersFilterSpec :
         given("SecurityHeadersFilter") {
             val filter = SecurityHeadersFilter()
 
-            `when`("필터 체인이 통과한 뒤 응답이 commit 되면") {
+            `when`("the filter chain runs and the response commits") {
                 val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 val chain = WebFilterChain { Mono.empty() }
                 filter.filter(exchange, chain).awaitSingleOrNull()
                 exchange.response.setComplete().awaitSingleOrNull()
 
-                then("필수 보안 헤더가 응답에 박힌다") {
+                then("required security headers are stamped on the response") {
                     val h = exchange.response.headers
                     h.getFirst("Strict-Transport-Security") shouldBe
                         "max-age=31536000; includeSubDomains"
@@ -31,7 +31,7 @@ class SecurityHeadersFilterSpec :
                 }
             }
 
-            `when`("다운스트림이 이미 X-Frame-Options 를 박은 경우") {
+            `when`("downstream has already set X-Frame-Options") {
                 val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
                 val chain =
                     WebFilterChain { ex ->
@@ -41,7 +41,7 @@ class SecurityHeadersFilterSpec :
                 filter.filter(exchange, chain).awaitSingleOrNull()
                 exchange.response.setComplete().awaitSingleOrNull()
 
-                then("다운스트림의 값을 덮어쓰지 않고 유지한다") {
+                then("the downstream value is preserved, not overwritten") {
                     exchange.response.headers.getFirst("X-Frame-Options") shouldBe "SAMEORIGIN"
                 }
             }

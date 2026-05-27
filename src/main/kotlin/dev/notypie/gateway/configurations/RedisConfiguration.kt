@@ -25,8 +25,8 @@ class RedisClusterConfiguration(
             Config().apply {
                 useClusterServers().apply {
                     // Base
-                    // addNodeAddress 는 vararg<String> — 노드 URI 를 개별 인수로 넘겨야 한다.
-                    // (이전 코드는 joinToString 으로 단일 문자열을 만들어 넘겨 MalformedURL 발생)
+                    // addNodeAddress takes vararg<String> — pass each node URI as a separate argument.
+                    // Joining them with joinToString yields a single string and triggers MalformedURL.
                     addNodeAddress(
                         *appConfig.redis.cluster.nodes
                             .toTypedArray(),
@@ -68,7 +68,10 @@ class RedisClusterConfiguration(
 
     @Bean
     fun redisModule(redissonClusterReactiveClient: RedissonReactiveClient): RedisModule =
-        ReactiveRedissonClientModule(client = redissonClusterReactiveClient)
+        ReactiveRedissonClientModule(
+            client = redissonClusterReactiveClient,
+            failOpenOnRedisFailure = appConfig.security.failOpenOnRedisFailure,
+        )
 }
 
 @Configuration
@@ -111,21 +114,27 @@ class RedisConfiguration(
 
     @Bean
     fun redisModule(redissonReactiveClient: RedissonReactiveClient): RedisModule =
-        ReactiveRedissonClientModule(client = redissonReactiveClient)
+        ReactiveRedissonClientModule(
+            client = redissonReactiveClient,
+            failOpenOnRedisFailure = appConfig.security.failOpenOnRedisFailure,
+        )
 }
 
-// Redisson auto config 는 GatewayApplication 레벨에서 항상 exclude 됨 (Spring Boot 4 호환성). 본 클래스는 보존만 함.
+// Redisson auto-config is always excluded at the GatewayApplication level (Spring Boot 4 compatibility).
+// This class is retained as a placeholder for the OnDisableRedis condition only.
 @Configuration
 @Conditional(OnDisableRedis::class)
 class DisableRedis
 
 /**
- * Redis 가 비활성화(NONE)이거나 blacklist storage 가 IN_MEMORY 일 때만 in-memory RedisModule 을 등록한다.
+ * Registers an in-memory RedisModule only when Redis is disabled (NONE) or blacklist storage is IN_MEMORY.
  *
- * 핵심: @Conditional(OnRedisDisabledOrInMemoryStorage::class) 가 없으면 RedisConfiguration/RedisClusterConfiguration
- *      이 활성화돼서 `redisModule` 빈을 등록한 상태에서도 본 클래스가 같이 로딩되어 bean override 충돌이 발생한다.
- *      (Spring Boot 4 기본값: spring.main.allow-bean-definition-overriding=false)
- *      @ConditionalOnMissingBean 은 Spring 의 평가 순서상 동일 라운드에서 등록되는 빈에 대해 신뢰할 수 없다.
+ * Why the explicit @Conditional: without it, this class would load alongside an active
+ * RedisConfiguration/RedisClusterConfiguration that already registers `redisModule`, causing a
+ * bean-override conflict (Spring Boot 4 defaults to
+ * `spring.main.allow-bean-definition-overriding=false`). @ConditionalOnMissingBean is not reliable
+ * here because Spring cannot determine bean ordering deterministically when beans are registered in
+ * the same evaluation round.
  */
 @Configuration
 @Conditional(OnInMemoryRedisModule::class)

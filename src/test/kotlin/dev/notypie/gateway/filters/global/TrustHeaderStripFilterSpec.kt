@@ -13,10 +13,10 @@ import reactor.core.publisher.Mono
 class TrustHeaderStripFilterSpec :
     BehaviorSpec({
 
-        given("기본 strip 리스트로 동작하는 TrustHeaderStripFilter") {
+        given("TrustHeaderStripFilter with the default strip list") {
             val filter = TrustHeaderStripFilter(AppConfig())
 
-            `when`("외부에서 X-User-ID, X-API-Key 를 박아 들어오면") {
+            `when`("external X-User-ID and X-API-Key headers arrive") {
                 val exchange =
                     MockServerWebExchange.from(
                         MockServerHttpRequest
@@ -33,7 +33,7 @@ class TrustHeaderStripFilterSpec :
                     }
                 filter.filter(exchange, chain).awaitSingleOrNull()
 
-                then("신뢰 헤더는 stripped, 그 외 헤더는 유지") {
+                then("trusted headers are stripped; other headers are preserved") {
                     val ds = downstream!!.request.headers
                     ds.getFirst("X-User-ID") shouldBe null
                     ds.getFirst("X-API-Key") shouldBe null
@@ -41,7 +41,7 @@ class TrustHeaderStripFilterSpec :
                 }
             }
 
-            `when`("strip 대상 헤더가 하나도 없으면") {
+            `when`("no strip-target header is present") {
                 val exchange =
                     MockServerWebExchange.from(
                         MockServerHttpRequest.get("/v1/posts").header("X-Request-ID", "rid"),
@@ -54,19 +54,19 @@ class TrustHeaderStripFilterSpec :
                     }
                 filter.filter(exchange, chain).awaitSingleOrNull()
 
-                then("요청이 그대로 다운스트림에 전달된다") {
+                then("the request is forwarded downstream unchanged") {
                     downstream!!.request.headers.getFirst("X-Request-ID") shouldBe "rid"
                 }
             }
         }
 
-        given("strip 리스트가 비어있으면") {
+        given("TrustHeaderStripFilter with an empty strip list") {
             val cfg =
                 AppConfig(
                     security = AppConfig.Security(strippedTrustHeaders = emptyList()),
                 )
             val filter = TrustHeaderStripFilter(cfg)
-            `when`("X-User-ID 가 들어와도") {
+            `when`("X-User-ID arrives") {
                 val exchange =
                     MockServerWebExchange.from(
                         MockServerHttpRequest.get("/v1/posts").header("X-User-ID", "passthrough"),
@@ -78,7 +78,7 @@ class TrustHeaderStripFilterSpec :
                         Mono.empty()
                     }
                 filter.filter(exchange, chain).awaitSingleOrNull()
-                then("strip 없이 그대로 통과") {
+                then("it passes through without stripping") {
                     downstream!!.request.headers.getFirst("X-User-ID") shouldBe "passthrough"
                 }
             }

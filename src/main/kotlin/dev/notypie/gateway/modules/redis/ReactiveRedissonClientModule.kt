@@ -13,6 +13,7 @@ val logger = KotlinLogging.logger { }
 
 class ReactiveRedissonClientModule(
     val client: RedissonReactiveClient,
+    private val failOpenOnRedisFailure: Boolean = true,
 ) : RedisModule {
     private fun bucket(key: String) = client.getBucket<String>(key)
 
@@ -80,7 +81,7 @@ class ReactiveRedissonClientModule(
                 ).awaitSingle()
         }.onFailure { ex ->
             logger.error { "Failed to increment key=$key count=$count, exception=${ex.message}" }
-        }.getOrElse { 0L }
+        }.getOrElse { if (failOpenOnRedisFailure) 0L else Long.MAX_VALUE }
 
     override suspend fun remainingTtl(key: String): Long =
         runCatching {

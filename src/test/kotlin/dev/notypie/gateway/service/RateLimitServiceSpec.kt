@@ -8,29 +8,29 @@ import io.kotest.matchers.shouldBe
 class RateLimitServiceSpec :
     BehaviorSpec({
 
-        given("RateLimitService 가 InMemoryModule 위에서 동작할 때") {
-            `when`("limit 이하로 요청하면") {
+        given("RateLimitService backed by InMemoryModule") {
+            `when`("requests stay within the limit") {
                 val svc = RateLimitService(InMemoryModule())
                 val result = svc.checkIpRateLimit("1.2.3.4", maxRequests = 5, windowSeconds = 60)
-                then("allowed=true, remaining 이 남는다") {
+                then("allowed=true and the remaining counter is non-negative") {
                     result.allowed shouldBe true
                     result.remaining shouldBeGreaterThanOrEqual 0L
                 }
             }
 
-            `when`("limit 을 초과하는 횟수만큼 같은 키로 요청하면") {
+            `when`("the same key is hit beyond its limit") {
                 val svc = RateLimitService(InMemoryModule())
                 repeat(5) { svc.checkIpRateLimit("1.2.3.4", maxRequests = 5, windowSeconds = 60) }
                 val over = svc.checkIpRateLimit("1.2.3.4", maxRequests = 5, windowSeconds = 60)
-                then("allowed=false 반환") {
+                then("allowed=false is returned") {
                     over.allowed shouldBe false
                 }
             }
 
-            `when`("checkMultipleRateLimits 에서 가장 적게 남은 카운터가 결과를 결정한다") {
+            `when`("checkMultipleRateLimits compares counters") {
                 val mod = InMemoryModule()
                 val svc = RateLimitService(mod)
-                // user 카운터를 미리 1로 올려둠. user limit=2 라면 남은 = 1 으로 가장 작아야 함.
+                // Prime the user counter to 1; with user limit=2, remaining=1 should be the smallest.
                 svc.checkUserRateLimit("alice", maxRequests = 2, windowSeconds = 60)
                 val result =
                     svc.checkMultipleRateLimits(
@@ -46,17 +46,17 @@ class RateLimitServiceSpec :
                                 windowSeconds = 60,
                             ),
                     )
-                then("user 카운터 기준이 더 빠듯해서 remaining 이 작다") {
+                then("the tighter user counter dominates the remaining result") {
                     result.allowed shouldBe true
-                    // user 는 이제 2 회 사용. limit=2 → remaining=0
+                    // user is now at 2 calls; limit=2 → remaining=0.
                     result.remaining shouldBe 0L
                 }
             }
 
-            `when`("identifier 가 모두 null 이면") {
+            `when`("all identifiers are null") {
                 val svc = RateLimitService(InMemoryModule())
                 val result = svc.checkMultipleRateLimits(null, null, null, null)
-                then("기본 allowed 반환") {
+                then("the default allowed result is returned") {
                     result.allowed shouldBe true
                 }
             }
