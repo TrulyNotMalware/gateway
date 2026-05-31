@@ -1,5 +1,6 @@
 package dev.notypie.gateway.modules.redis
 
+import dev.notypie.gateway.configurations.RedisFailureMode
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.awaitSingle
@@ -13,8 +14,17 @@ val logger = KotlinLogging.logger { }
 
 class ReactiveRedissonClientModule(
     val client: RedissonReactiveClient,
-    private val failOpenOnRedisFailure: Boolean = true,
+    private val redisFailureMode: RedisFailureMode = RedisFailureMode.FAIL_OPEN,
+    private val inMemoryFallback: InMemoryRateLimitFallback? = null,
 ) : RedisModule {
+    init {
+        // Configuration error rather than a runtime NPE — surface it at boot so a misconfigured
+        // deployment fails fast in startup logs instead of the first Redis hiccup.
+        require(redisFailureMode != RedisFailureMode.HYBRID_IN_MEMORY || inMemoryFallback != null) {
+            "redisFailureMode=HYBRID_IN_MEMORY requires an InMemoryRateLimitFallback to be wired."
+        }
+    }
+
     private fun bucket(key: String) = client.getBucket<String>(key)
 
     override suspend fun set(key: String, value: String, ttlSeconds: Long?): Boolean =
@@ -81,7 +91,13 @@ class ReactiveRedissonClientModule(
                 ).awaitSingle()
         }.onFailure { ex ->
             logger.error { "Failed to increment key=$key count=$count, exception=${ex.message}" }
-        }.getOrElse { if (failOpenOnRedisFailure) 0L else Long.MAX_VALUE }
+        }.getOrElse {
+            when (redisFailureMode) {
+                RedisFailureMode.FAIL_OPEN -> 0L
+                RedisFailureMode.FAIL_CLOSED -> Long.MAX_VALUE
+                RedisFailureMode.HYBRID_IN_MEMORY -> inMemoryFallback!!.increment(key, count, ttlSeconds)
+            }
+        }
 
     override suspend fun remainingTtl(key: String): Long =
         runCatching {
@@ -89,5 +105,13 @@ class ReactiveRedissonClientModule(
             atomicLong.remainTimeToLive().awaitSingle() / 1000
         }.onFailure { ex ->
             logger.error { "Failed to get remaining TTL key=$key, exception=${ex.message}" }
-        }.getOrElse { -2L }
+        }.getOrElse {
+            // FAIL_OPEN / FAIL_CLOSED both surface -2 (key missing) so the response header
+            // shows "no info" rather than a fabricated TTL — only HYBRID has real per-pod
+            // window state to read from.
+            when (redisFailureMode) {
+                RedisFailureMode.FAIL_OPEN, RedisFailureMode.FAIL_CLOSED -> -2L
+                RedisFailureMode.HYBRID_IN_MEMORY -> inMemoryFallback!!.remainingTtl(key)
+            }
+        }
 }

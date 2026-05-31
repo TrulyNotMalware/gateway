@@ -2,6 +2,7 @@ package dev.notypie.gateway.configurations
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.notypie.gateway.modules.redis.InMemoryModule
+import dev.notypie.gateway.modules.redis.InMemoryRateLimitFallback
 import dev.notypie.gateway.modules.redis.ReactiveRedissonClientModule
 import dev.notypie.gateway.modules.redis.RedisModule
 import org.redisson.Redisson
@@ -66,11 +67,21 @@ class RedisClusterConfiguration(
     fun redissonClusterReactiveClient(redissonClusterClient: RedissonClient): RedissonReactiveClient =
         redissonClusterClient.reactive()
 
+    // Eagerly construct the in-memory fallback so its periodic-cleanup coroutine is running
+    // before Redis ever fails. Cheap to keep idle in FAIL_OPEN / FAIL_CLOSED modes (one
+    // empty ConcurrentHashMap, one suspended coroutine ticking every 5 minutes).
     @Bean
-    fun redisModule(redissonClusterReactiveClient: RedissonReactiveClient): RedisModule =
+    fun inMemoryRateLimitFallback(): InMemoryRateLimitFallback = InMemoryRateLimitFallback()
+
+    @Bean
+    fun redisModule(
+        redissonClusterReactiveClient: RedissonReactiveClient,
+        inMemoryRateLimitFallback: InMemoryRateLimitFallback,
+    ): RedisModule =
         ReactiveRedissonClientModule(
             client = redissonClusterReactiveClient,
-            failOpenOnRedisFailure = appConfig.security.failOpenOnRedisFailure,
+            redisFailureMode = appConfig.security.redisFailureMode,
+            inMemoryFallback = inMemoryRateLimitFallback,
         )
 }
 
@@ -113,10 +124,17 @@ class RedisConfiguration(
     fun redissonReactiveClient(redissonClient: RedissonClient): RedissonReactiveClient = redissonClient.reactive()
 
     @Bean
-    fun redisModule(redissonReactiveClient: RedissonReactiveClient): RedisModule =
+    fun inMemoryRateLimitFallback(): InMemoryRateLimitFallback = InMemoryRateLimitFallback()
+
+    @Bean
+    fun redisModule(
+        redissonReactiveClient: RedissonReactiveClient,
+        inMemoryRateLimitFallback: InMemoryRateLimitFallback,
+    ): RedisModule =
         ReactiveRedissonClientModule(
             client = redissonReactiveClient,
-            failOpenOnRedisFailure = appConfig.security.failOpenOnRedisFailure,
+            redisFailureMode = appConfig.security.redisFailureMode,
+            inMemoryFallback = inMemoryRateLimitFallback,
         )
 }
 

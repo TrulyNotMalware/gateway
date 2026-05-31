@@ -1,6 +1,7 @@
 package dev.notypie.gateway.filters.global
 
 import dev.notypie.gateway.configurations.AppConfig
+import dev.notypie.gateway.configurations.RedisFailureMode
 import dev.notypie.gateway.service.BlacklistService
 import dev.notypie.gateway.service.RateLimitConfig
 import dev.notypie.gateway.service.RateLimitResult
@@ -97,13 +98,48 @@ class SecurityFilter(
                     }
                 }
             } catch (e: TimeoutCancellationException) {
-                logger.error { "Security check timeout - allowing request: IP: $clientIp" }
-                chain.filter(exchange).awaitSingleOrNull()
+                handleSecurityCheckFailure(exchange, chain, clientIp, userId, apiKey, "timeout", e)
             } catch (e: Exception) {
-                logger.error(e) { "Security check failed - allowing request: IP: $clientIp" }
-                chain.filter(exchange).awaitSingleOrNull()
+                handleSecurityCheckFailure(exchange, chain, clientIp, userId, apiKey, "exception", e)
             }
         }.then()
+
+    /**
+     * Decide what to do when the parallel security check itself fails or times out.
+     *
+     * Per-call `ReactiveRedissonClientModule.increment` already dispatches by
+     * [RedisFailureMode] when its Redis await throws. But a Redis stall that runs past
+     * `security.timeoutMs` is cancelled here *before* the inner await throws, so the
+     * fallback was never consulted. We honour the operator's configured stance instead
+     * of unconditionally allowing — otherwise FAIL_CLOSED silently degrades to FAIL_OPEN
+     * the moment Redis is slow rather than down.
+     *
+     * HYBRID is treated as allow on timeout: its goal is "throttle locally when Redis is
+     * unreachable", not "deny on slow Redis". A timeout means the per-call dispatch never
+     * reached the in-memory path, so we cannot honour the local counter retroactively.
+     */
+    private suspend fun handleSecurityCheckFailure(
+        exchange: ServerWebExchange,
+        chain: GatewayFilterChain,
+        clientIp: String,
+        userId: String?,
+        apiKey: String?,
+        kind: String,
+        cause: Throwable,
+    ) {
+        when (appConfig.security.redisFailureMode) {
+            RedisFailureMode.FAIL_OPEN, RedisFailureMode.HYBRID_IN_MEMORY -> {
+                logger.error(cause) {
+                    "Security check $kind — allowing request (mode=${appConfig.security.redisFailureMode}): IP: $clientIp"
+                }
+                chain.filter(exchange).awaitSingleOrNull()
+            }
+            RedisFailureMode.FAIL_CLOSED -> {
+                logger.error(cause) { "Security check $kind — denying request (mode=FAIL_CLOSED): IP: $clientIp" }
+                blockRequest(exchange, "RATE_LIMITED", clientIp, userId, apiKey)
+            }
+        }
+    }
 
     private suspend fun blockRequest(
         exchange: ServerWebExchange,

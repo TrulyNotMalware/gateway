@@ -108,25 +108,33 @@ visitors).
 Tune from real traffic by uncommenting the keys in
 `k8s/dok/configmap.yaml`; no code change required.
 
-### Redis failure policy (`failOpenOnRedisFailure`)
+### Redis failure policy (`redisFailureMode`)
 
 When the Redis `INCRBY` call fails, `ReactiveRedissonClientModule.increment`
-falls back to a sentinel value:
+dispatches by the configured mode:
 
-| Toggle | Sentinel | Effect |
+| Mode | Behaviour on Redis failure | When to pick it |
 |---|---|---|
-| `true` (default) | `0L` | RateLimit treats request as allowed → **fail-open** |
-| `false` | `Long.MAX_VALUE` | RateLimit treats request as exceeded → **fail-closed** (429) |
+| `FAIL_OPEN` (default) | `increment` returns `0L`; RateLimit treats request as allowed | Read-heavy public traffic, RateLimit is an *additional* protection layer |
+| `FAIL_CLOSED` | `increment` returns `Long.MAX_VALUE`; every request rejected (429) | Backend protection is more important than availability |
+| `HYBRID_IN_MEMORY` | Falls back to a per-pod `InMemoryRateLimitFallback` (ConcurrentHashMap, same window semantics) | Want some throttle during Redis outages, accepting per-pod split state (effective limit × replica count) |
 
-**Default rationale (fail-open):** the gateway is a read-heavy blog edge and
+**Default rationale (`FAIL_OPEN`):** the gateway is a read-heavy blog edge and
 RateLimit is an *additional* protection layer; the Blacklist module runs
 independently, so known-bad IPs stay blocked even when Redis is down. Letting
 Redis outages take down routing/CB/auth would cost more than a brief RateLimit
 gap.
 
-Switch stance with `APP_CONFIG_SECURITY_FAIL_OPEN_ON_REDIS_FAILURE: "false"`
-in the ConfigMap (no code change). A hybrid per-pod in-memory fallback is
-tracked in `PLAN.md` §5 (P3).
+Switch stance with `APP_CONFIG_SECURITY_REDIS_FAILURE_MODE: "FAIL_CLOSED"` (or
+`HYBRID_IN_MEMORY`) in the ConfigMap — no code change.
+
+**Slow Redis (timeout) edge case**: when Redis stalls past
+`security.timeoutMs`, the parallel security check is cancelled *before* the
+per-call dispatch fires, so the in-memory fallback is never consulted. The
+timeout handler honours the mode: `FAIL_OPEN` / `HYBRID_IN_MEMORY` allow the
+request (HYBRID's intent is "throttle when Redis is unreachable", not "deny on
+slow Redis"); `FAIL_CLOSED` blocks with `RATE_LIMITED`. Without this wiring
+`FAIL_CLOSED` would silently degrade to fail-open on slow Redis.
 
 ---
 
@@ -240,18 +248,26 @@ kubectl apply -f src/main/resources/k8s/service.yaml
 
 실측 트래픽으로 튜닝하려면 `k8s/dok/configmap.yaml` 의 키 주석을 해제. 코드 변경 불필요.
 
-### Redis 장애 시 정책 (`failOpenOnRedisFailure`)
+### Redis 장애 시 정책 (`redisFailureMode`)
 
-Redis `INCRBY` 실패 시 `ReactiveRedissonClientModule.increment` 가 sentinel 값으로 fallback:
+Redis `INCRBY` 실패 시 `ReactiveRedissonClientModule.increment` 가 설정된 모드로 분기:
 
-| 토글 | Sentinel | 효과 |
+| 모드 | Redis 실패 시 동작 | 선택 기준 |
 |---|---|---|
-| `true` (기본) | `0L` | RateLimit 이 통과로 해석 → **fail-open** |
-| `false` | `Long.MAX_VALUE` | RateLimit 이 초과로 해석 → **fail-closed** (429) |
+| `FAIL_OPEN` (기본) | `0L` 반환 → 요청 통과 | Read-heavy public 트래픽, RateLimit 은 추가 보호층 |
+| `FAIL_CLOSED` | `Long.MAX_VALUE` 반환 → 모든 요청 거부 (429) | 가용성보다 backend 보호 우선 |
+| `HYBRID_IN_MEMORY` | per-pod `InMemoryRateLimitFallback` (ConcurrentHashMap, 동일 윈도 의미) 로 전환 | Redis 장애 중에도 throttle 원함. 단 pod 간 split state → 실효 limit × replica 수 |
 
-**기본값 (fail-open) 근거**: 게이트웨이는 read-heavy 블로그 edge 이고 RateLimit 은
+**기본값 (`FAIL_OPEN`) 근거**: 게이트웨이는 read-heavy 블로그 edge 이고 RateLimit 은
 *추가* 보호층. Blacklist 모듈이 독립적으로 동작하므로 알려진 악성 IP 는 Redis 다운에도
 계속 차단됨. Redis 장애로 라우팅/CB/auth 까지 죽이는 손해가 일시적 RateLimit 갭보다 큼.
 
-stance 전환은 ConfigMap 에서 `APP_CONFIG_SECURITY_FAIL_OPEN_ON_REDIS_FAILURE: "false"`
-로 변경 (코드 변경 X). 하이브리드 per-pod in-memory fallback 은 `PLAN.md` §5 (P3) 로 분리.
+stance 전환은 ConfigMap 에서 `APP_CONFIG_SECURITY_REDIS_FAILURE_MODE: "FAIL_CLOSED"`
+(또는 `HYBRID_IN_MEMORY`) 으로 변경. 코드 변경 X.
+
+**Slow Redis (timeout) 케이스**: Redis 가 `security.timeoutMs` 를 넘어 매달리면 병렬
+security 체크가 **per-call dispatch 가 발화하기 전에** 취소되므로 in-memory fallback 도
+호출되지 않음. 타임아웃 핸들러는 모드에 따라 동작: `FAIL_OPEN` / `HYBRID_IN_MEMORY` 는
+요청 통과 (HYBRID 의도는 "Redis 가 unreachable 일 때 throttle", "slow Redis 에서 거부"가
+아님), `FAIL_CLOSED` 는 `RATE_LIMITED` 로 차단. 이 와이어링이 없으면 slow Redis 상황에서
+`FAIL_CLOSED` 가 사실상 fail-open 으로 떨어짐.

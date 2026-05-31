@@ -23,7 +23,40 @@ data class AppConfig(
     val blacklist: Blacklist = Blacklist(),
     val redis: Redis = Redis(),
     val security: Security = Security(),
+    val jwt: Jwt = Jwt(),
 ) {
+    /**
+     * Multi-issuer JWT verification config.
+     *
+     * The gateway is purely a verifier — each backend service signs its own tokens with its
+     * own RSA private key and exposes a `/.well-known/jwks.json`. The gateway picks the
+     * right public key by routing on the token's `iss` claim. Adding a new backend means
+     * adding one entry to `issuers` (no code change, regardless of the backend's language).
+     *
+     * Wire from k8s ConfigMap with indexed env vars (Spring Boot relaxed binding maps
+     * kebab-case `jwks-uri` to `JWKS_URI`):
+     *   APP_CONFIG_JWT_ISSUERS_0_ISSUER=blog-be
+     *   APP_CONFIG_JWT_ISSUERS_0_JWKS_URI=http://blog-svc.blog.svc.cluster.local:8080/.well-known/jwks.json
+     *   APP_CONFIG_JWT_ISSUERS_1_ISSUER=file-be
+     *   APP_CONFIG_JWT_ISSUERS_1_JWKS_URI=http://file-svc.file.svc.cluster.local:8080/.well-known/jwks.json
+     */
+    data class Jwt(
+        val issuers: List<IssuerEntry> = emptyList(),
+    ) {
+        /**
+         * One verifier per backend service. `audience` (optional but recommended) is the
+         * `aud` claim the issuer must stamp on its tokens. When set, the gateway rejects
+         * tokens missing it — catches a leaked token being replayed against a verifier it
+         * was never minted for. Per-route audience binding is a separate concern; this is
+         * the issuer-level contract.
+         */
+        data class IssuerEntry(
+            val issuer: String = "",
+            val jwksUri: String = "",
+            val audience: String = "",
+        )
+    }
+
     data class Security(
         val timeoutMs: Long = 1000L,
         val enableBlacklist: Boolean = true,
@@ -41,7 +74,11 @@ data class AppConfig(
                 "X-Gateway-Auth",
             ),
         val gatewaySharedSecret: String = "",
-        val failOpenOnRedisFailure: Boolean = true,
+        // Stance when Redis (the source of truth for RateLimit counters) is unreachable.
+        // FAIL_OPEN -> increment returns 0 (no throttle); FAIL_CLOSED -> Long.MAX_VALUE
+        // (deny all); HYBRID_IN_MEMORY -> fall through to per-pod ConcurrentHashMap counter
+        // (state not shared across pods, but single-source bursts still throttle locally).
+        val redisFailureMode: RedisFailureMode = RedisFailureMode.FAIL_OPEN,
     )
 
     data class Blacklist(
@@ -88,6 +125,12 @@ enum class RedisMode {
 enum class StorageMode {
     REDIS,
     IN_MEMORY,
+}
+
+enum class RedisFailureMode {
+    FAIL_OPEN,
+    FAIL_CLOSED,
+    HYBRID_IN_MEMORY,
 }
 
 enum class FailedNodeDetectorType(

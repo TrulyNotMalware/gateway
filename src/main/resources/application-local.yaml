@@ -69,8 +69,10 @@ management:
 app:
   config:
     jwt:
-      secret: "local-dev-jwt-secret-please-replace-with-at-least-32-character-string"
-      issuer: "blog-be"
+      issuers:
+        - issuer: "blog-be"
+          jwks-uri: "http://localhost:8000/.well-known/jwks.json"
+          audience: "blog-be"
     security:
       enable-blacklist: false
       enable-rate-limit: false

@@ -220,9 +220,15 @@ resilience4j:
 
 app:
   config:
+    # Multi-issuer JWT verification: each backend signs with its own RSA private key
+    # and exposes /.well-known/jwks.json. Add an entry per backend — no code change.
+    # Wire via ConfigMap env vars (indexed list binding):
+    #   APP_CONFIG_JWT_ISSUERS_0_ISSUER=blog-be
+    #   APP_CONFIG_JWT_ISSUERS_0_JWKS_URI=http://blog-svc.../.well-known/jwks.json
+    #   APP_CONFIG_JWT_ISSUERS_1_ISSUER=file-be
+    #   APP_CONFIG_JWT_ISSUERS_1_JWKS_URI=http://file-svc.../.well-known/jwks.json
     jwt:
-      secret: ${APP_CONFIG_JWT_SECRET:}
-      issuer: ${APP_CONFIG_JWT_ISSUER:blog-be}
+      issuers: []
     security:
       enable-blacklist: true
       enable-rate-limit: true
