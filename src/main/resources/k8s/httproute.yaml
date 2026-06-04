@@ -1,0 +1,34 @@
+# API entrypoint route: external API hostname -> the Spring Cloud Gateway (this service),
+# which performs JWT verification / rate-limit / blacklist and injects the X-Gateway-Auth
+# hop header before forwarding to backends (blog_be, etc.). Backends enforce hop-proof, so
+# traffic MUST traverse this gateway — do NOT route the API hostname straight to a backend.
+#
+# Prerequisites the cluster operator already owns:
+#   - An Istio `Gateway` with an HTTPS:443 listener (TLS via cert-manager).
+#   - If that Gateway lives in another namespace, its `allowedRoutes.namespaces` must permit
+#     routes from `api-service` (e.g. `from: All`, or a selector matching this namespace).
+#   - DNS pointing api.<domain> at the Gateway's address.
+#
+# Applied with raw `kubectl apply -f` (the committed gateway manifests are not kustomized).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api-gateway
+  namespace: api-service
+  labels:
+    app: api-gateway-deploy
+spec:
+  parentRefs:
+    - name: REPLACE_ME_gateway_name
+      namespace: REPLACE_ME_gateway_namespace
+      sectionName: https
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: api-gateway-svc
+          port: 80
