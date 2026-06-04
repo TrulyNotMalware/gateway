@@ -14,7 +14,7 @@ data:
 
   # Downstream service k8s DNS.
   PRJ_DOK_URI: "http://dok-svc.dok.svc.cluster.local:8080"
-  PRJ_BE_URI: "http://blog-svc.blog.svc.cluster.local:8080"
+  PRJ_BE_URI: "http://blog-app.blog.svc.cluster.local:8080"
   # File service — replace with the real svc DNS when the service is introduced.
   PRJ_FILE_URI: "http://file-svc.file.svc.cluster.local:8080"
 
@@ -22,11 +22,12 @@ data:
 
   JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
 
-  # Standalone Redis is required to share rate-limit / blacklist counters across pods
-  # when replicas >= 2. Password is injected via Secret (APP_CONFIG_REDIS_PASSWORD).
-  APP_CONFIG_REDIS_MODE: "standalone"
-  APP_CONFIG_REDIS_HOST: "redis-svc.redis.svc.cluster.local"
-  APP_CONFIG_REDIS_PORT: "6379"
+  # Redis Cluster is the shared source of truth for rate-limit / blacklist counters
+  # across pods (replicas >= 2). Password is injected via Secret (APP_CONFIG_REDIS_PASSWORD).
+  # Seed node = the cluster's ClusterIP service; Redisson discovers the rest of the
+  # topology (announce-ip = pod IP) via CLUSTER NODES, so one seed is sufficient.
+  APP_CONFIG_REDIS_MODE: "cluster"
+  APP_CONFIG_REDIS_CLUSTER_NODES_0: "redis://redis-cluster.infra.svc.cluster.local:6379"
   APP_CONFIG_BLACKLIST_STORAGE_MODE: "redis"
 
   # JWT verification — multi-issuer RS256 via JWKS. Each backend signs its own tokens
@@ -35,7 +36,7 @@ data:
   # NetworkPolicy restricts JWKS access to the api-service namespace.
   # `audience` is the `aud` claim the backend stamps on its tokens — gateway rejects mismatches.
   APP_CONFIG_JWT_ISSUERS_0_ISSUER: "blog-be"
-  APP_CONFIG_JWT_ISSUERS_0_JWKS_URI: "http://blog-svc.blog.svc.cluster.local:8080/.well-known/jwks.json"
+  APP_CONFIG_JWT_ISSUERS_0_JWKS_URI: "http://blog-app.blog.svc.cluster.local:8080/.well-known/jwks.json"
   APP_CONFIG_JWT_ISSUERS_0_AUDIENCE: "blog-be"
   # Example second issuer (uncomment + replace with real DNS when file-svc is introduced):
   # APP_CONFIG_JWT_ISSUERS_1_ISSUER: "file-be"

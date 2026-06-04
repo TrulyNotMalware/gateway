@@ -40,3 +40,4 @@ out/
 .kotlin
 gradle.properties
 .omc
+/k8s-local/
