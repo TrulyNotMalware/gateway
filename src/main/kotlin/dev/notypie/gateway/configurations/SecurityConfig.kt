@@ -53,7 +53,8 @@ import java.time.Duration
  * removed any external input).
  *
  * Authorization policy:
- *   - public: GET `/v1/posts/`, `/v1/tags/`, `/v1/search/`, POST `/v1/auth/login`, `/v1/auth/refresh`,
+ *   - public: GET `/v1/posts/`, `/v1/tags/`, `/v1/search/`, `/v1/content/`,
+ *             POST `/v1/auth/login`, `/v1/auth/refresh`,
  *             `/fallback/`, `/actuator/` (mgmt port is separate but listed for safety)
  *   - everything else under `/v1/`: requires authentication
  */
@@ -73,7 +74,7 @@ class SecurityConfig(
             .logout { it.disable() }
             .authorizeExchange { ex ->
                 ex
-                    .pathMatchers(HttpMethod.GET, "/v1/posts/**", "/v1/tags/**", "/v1/search/**")
+                    .pathMatchers(HttpMethod.GET, "/v1/posts/**", "/v1/tags/**", "/v1/search/**", "/v1/content/**")
                     .permitAll()
                     .pathMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/refresh")
                     .permitAll()
