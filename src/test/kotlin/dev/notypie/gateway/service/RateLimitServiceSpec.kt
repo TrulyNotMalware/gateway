@@ -36,13 +36,11 @@ class RateLimitServiceSpec :
                     svc.checkMultipleRateLimits(
                         ip = "1.2.3.4",
                         userId = "alice",
-                        apiKey = null,
                         endpoint = null,
                         limits =
                             RateLimitConfig(
                                 ipMaxRequests = 1000,
                                 userMaxRequests = 2,
-                                apiKeyMaxRequests = 1000,
                                 windowSeconds = 60,
                             ),
                     )
@@ -55,7 +53,7 @@ class RateLimitServiceSpec :
 
             `when`("all identifiers are null") {
                 val svc = RateLimitService(InMemoryModule())
-                val result = svc.checkMultipleRateLimits(null, null, null, null)
+                val result = svc.checkMultipleRateLimits(null, null, null)
                 then("the default allowed result is returned") {
                     result.allowed shouldBe true
                 }

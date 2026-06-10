@@ -35,7 +35,6 @@ class SecurityFilterSpec :
                             enableRateLimit = true,
                             ipMaxRequests = 1,
                             userMaxRequests = 1000,
-                            apiKeyMaxRequests = 1000,
                             endpointMaxRequests = 1000,
                             windowSeconds = 60,
                         ),
@@ -107,6 +106,83 @@ class SecurityFilterSpec :
                 then("the second request is blocked with 429") {
                     passed shouldBe false
                     ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+        }
+
+        given("SecurityFilter with a tight login rate limit") {
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = false,
+                            enableRateLimit = true,
+                            // Keep the generic dimensions loose so only the login counter can trip.
+                            ipMaxRequests = 100000,
+                            userMaxRequests = 100000,
+                            endpointMaxRequests = 100000,
+                            windowSeconds = 60,
+                            loginMaxRequests = 10,
+                            loginWindowSeconds = 60,
+                            loginPath = "/v1/auth/login",
+                        ),
+                )
+
+            `when`("the 11th login attempt within the window arrives from the same IP") {
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper)
+
+                fun loginRequest() =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .post("/v1/auth/login")
+                            .remoteAddress(InetSocketAddress("7.7.7.7", 0)),
+                    )
+
+                repeat(10) { filter.filter(loginRequest(), GatewayFilterChain { Mono.empty() }).awaitSingleOrNull() }
+
+                val ex = loginRequest()
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the 11th login is blocked with 429") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+
+            `when`("a non-login path is hit many times from the same IP") {
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper)
+
+                fun postsRequest() =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("7.7.7.7", 0)),
+                    )
+
+                repeat(10) { filter.filter(postsRequest(), GatewayFilterChain { Mono.empty() }).awaitSingleOrNull() }
+
+                val ex = postsRequest()
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("it is unaffected by the login counter and still passes") {
+                    passed shouldBe true
                 }
             }
         }

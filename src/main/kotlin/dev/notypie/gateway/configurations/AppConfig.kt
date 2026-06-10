@@ -63,9 +63,14 @@ data class AppConfig(
         val enableRateLimit: Boolean = true,
         val ipMaxRequests: Long = 1000L,
         val userMaxRequests: Long = 500L,
-        val apiKeyMaxRequests: Long = 1000L,
         val endpointMaxRequests: Long = 100L,
         val windowSeconds: Long = 60L,
+        // /v1/auth/login is pre-auth, so its endpoint counter falls back to IP at endpointMaxRequests
+        // (100/min) — far too loose for a single admin account. These drive a dedicated tight
+        // IP-keyed check in SecurityFilter. Env-overridable: APP_CONFIG_SECURITY_LOGIN_*.
+        val loginMaxRequests: Long = 10L,
+        val loginWindowSeconds: Long = 60L,
+        val loginPath: String = "/v1/auth/login",
         val strippedTrustHeaders: List<String> =
             listOf(
                 "X-User-ID",
@@ -78,7 +83,7 @@ data class AppConfig(
         // FAIL_OPEN -> increment returns 0 (no throttle); FAIL_CLOSED -> Long.MAX_VALUE
         // (deny all); HYBRID_IN_MEMORY -> fall through to per-pod ConcurrentHashMap counter
         // (state not shared across pods, but single-source bursts still throttle locally).
-        val redisFailureMode: RedisFailureMode = RedisFailureMode.FAIL_OPEN,
+        val redisFailureMode: RedisFailureMode = RedisFailureMode.HYBRID_IN_MEMORY,
     )
 
     data class Blacklist(

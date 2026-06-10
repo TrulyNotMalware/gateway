@@ -97,7 +97,7 @@ Defaults live in `AppConfig.Security` (Kotlin) and can be overridden via env
 | `userMaxRequests` | 500 / 60s | per authenticated user |
 | `apiKeyMaxRequests` | 1000 / 60s | per API key |
 | `endpointMaxRequests` | 100 / 60s | per (endpoint, identifier) |
-| `windowSeconds` | 60 | sliding window for all counters |
+| `windowSeconds` | 60 | fixed window for all counters (Lua INCRBY + EXPIRE on first hit — a burst can straddle a window boundary and briefly allow up to 2× the limit) |
 
 `RateLimitService.checkMultipleRateLimits` runs IP/user/api-key/endpoint checks
 in parallel and applies the **tightest** remaining quota. The endpoint key's
@@ -115,15 +115,20 @@ dispatches by the configured mode:
 
 | Mode | Behaviour on Redis failure | When to pick it |
 |---|---|---|
-| `FAIL_OPEN` (default) | `increment` returns `0L`; RateLimit treats request as allowed | Read-heavy public traffic, RateLimit is an *additional* protection layer |
+| `FAIL_OPEN` | `increment` returns `0L`; RateLimit treats request as allowed | Read-heavy public traffic, RateLimit is an *additional* protection layer |
 | `FAIL_CLOSED` | `increment` returns `Long.MAX_VALUE`; every request rejected (429) | Backend protection is more important than availability |
-| `HYBRID_IN_MEMORY` | Falls back to a per-pod `InMemoryRateLimitFallback` (ConcurrentHashMap, same window semantics) | Want some throttle during Redis outages, accepting per-pod split state (effective limit × replica count) |
+| `HYBRID_IN_MEMORY` (default) | Falls back to a per-pod `InMemoryRateLimitFallback` (ConcurrentHashMap, same window semantics) | Want some throttle during Redis outages, accepting per-pod split state (effective limit × replica count) |
 
-**Default rationale (`FAIL_OPEN`):** the gateway is a read-heavy blog edge and
-RateLimit is an *additional* protection layer; the Blacklist module runs
-independently, so known-bad IPs stay blocked even when Redis is down. Letting
-Redis outages take down routing/CB/auth would cost more than a brief RateLimit
-gap.
+**Default rationale (`HYBRID_IN_MEMORY`):** a Redis outage still leaves some
+throttling in place (per-pod counters), bounding the blast radius instead of
+removing protection entirely.
+
+> ⚠️ **Blacklist is NOT independent of Redis.** Blacklist entries live in Redis
+> too, and the in-memory fallback covers **only** the rate-limit counters — it
+> does **not** back the blacklist. So on a Redis outage the blacklist check is
+> effectively bypassed regardless of mode (it returns "not blacklisted"). This
+> is another reason to avoid `FAIL_OPEN`: with it, *both* rate-limiting and
+> blacklisting are off during an outage.
 
 Switch stance with `APP_CONFIG_SECURITY_REDIS_FAILURE_MODE: "FAIL_CLOSED"` (or
 `HYBRID_IN_MEMORY`) in the ConfigMap — no code change.

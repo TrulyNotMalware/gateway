@@ -1,0 +1,107 @@
+# Default-deny all ingress/egress for the api-gateway pods; then explicitly allow what is needed.
+#
+# Ingress:  istio-system data-plane → 8080 (public traffic); monitoring → 8081 (Prometheus scrape)
+# Egress:   blog_be (ns blog, port 8080, also serves JWKS), redis (ns infra, 6379),
+#           kube-dns (53), dok/file backends (see placeholder note below)
+#
+# IMPORTANT: the gateway sits behind the Spring Cloud Gateway data plane in `istio-system`
+# (the `api-gateway` Gateway lives there). If you front it with a different Gateway API
+# implementation, change the ingress namespaceSelector below to that data-plane namespace
+# (istio-system / envoy-gateway-system / nginx-gateway / kgateway-system).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-ingress
+  namespace: api-service
+  labels:
+    app: api-gateway-deploy
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway-deploy
+  policyTypes:
+    - Ingress
+  ingress:
+    # Public traffic from the Istio data plane → app port 8080.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Prometheus scrape of the management port 8081 (/actuator/prometheus).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-egress
+  namespace: api-service
+  labels:
+    app: api-gateway-deploy
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway-deploy
+  policyTypes:
+    - Egress
+  egress:
+    # blog_be — routed traffic + JWKS fetch (http://blog-app.blog.svc.cluster.local:8080).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: blog
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: blog-app
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Redis cluster — rate-limit / blacklist counters (redis-cluster.infra.svc.cluster.local:6379).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 6379
+    # kube-dns
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # dok backend — PRJ_DOK_URI = http://dok-svc.dok.svc.cluster.local:8080 (ns `dok`).
+    # PLACEHOLDER: namespace is known from the ConfigMap, but the backend pod labels are NOT
+    # determinable from this repo. Add a podSelector (app.kubernetes.io/name: <dok-app>) to
+    # tighten this once the dok service's labels are confirmed. HUMAN REVIEW REQUIRED.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dok
+      ports:
+        - protocol: TCP
+          port: 8080
+    # file backend — PRJ_FILE_URI = http://file-svc.file.svc.cluster.local:8080 (ns `file`).
+    # PLACEHOLDER: namespace is known from the ConfigMap, but the backend pod labels are NOT
+    # determinable from this repo (the file service is not yet introduced). Add a podSelector
+    # to tighten this once file-svc's labels are confirmed. HUMAN REVIEW REQUIRED.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: file
+      ports:
+        - protocol: TCP
+          port: 8080

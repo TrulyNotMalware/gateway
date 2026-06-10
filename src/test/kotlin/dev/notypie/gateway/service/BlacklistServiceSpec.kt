@@ -28,19 +28,19 @@ class BlacklistServiceSpec :
                 }
             }
 
-            `when`("isAnyBlacklisted is called with IP, user, and API key together") {
+            `when`("isAnyBlacklisted is called with IP and user together") {
                 val svc = BlacklistService(InMemoryModule())
                 svc.addUserToBlacklist("alice", "abuse")
                 then("returns true if any of them matches") {
-                    svc.isAnyBlacklisted("1.2.3.4", "alice", null) shouldBe true
-                    svc.isAnyBlacklisted("1.2.3.4", "bob", null) shouldBe false
+                    svc.isAnyBlacklisted("1.2.3.4", "alice") shouldBe true
+                    svc.isAnyBlacklisted("1.2.3.4", "bob") shouldBe false
                 }
             }
 
             `when`("all identifiers are null") {
                 val svc = BlacklistService(InMemoryModule())
                 then("returns false (nothing to check)") {
-                    svc.isAnyBlacklisted("", null, null) shouldBe false
+                    svc.isAnyBlacklisted("", null) shouldBe false
                 }
             }
 

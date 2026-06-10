@@ -53,7 +53,8 @@ spec:
             # e.g. APP_CONFIG_REDIS_PASSWORD.
             - secretRef:
                 name: api-gateway-secret
-                optional: true
+                # Fail-fast: a missing Redis password must crash the pod, not silently boot into FAIL_OPEN.
+                optional: false
           resources:
             requests:
               cpu: "250m"

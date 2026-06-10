@@ -15,8 +15,18 @@ class RateLimitService(
         private const val RATE_LIMIT_KEY_PREFIX = "rate_limit:"
         private const val IP_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}ip:"
         private const val USER_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}user:"
-        private const val API_KEY_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}api_key:"
         private const val ENDPOINT_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}endpoint:"
+        private const val LOGIN_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}login:"
+    }
+
+    /**
+     * Dedicated tight limit for the pre-auth login endpoint, keyed by IP under its own prefix
+     * so it never collides with the generic IP counter. Goes through the same `redisModule.increment`
+     * path, so `redisFailureMode` / HYBRID fallback applies identically.
+     */
+    suspend fun checkLoginRateLimit(ip: String, maxRequests: Long = 10, windowSeconds: Long = 60): RateLimitResult {
+        val key = "$LOGIN_RATE_LIMIT_KEY$ip"
+        return checkRateLimit(key, maxRequests, windowSeconds)
     }
 
     suspend fun checkIpRateLimit(ip: String, maxRequests: Long = 1000, windowSeconds: Long = 60): RateLimitResult {
@@ -26,15 +36,6 @@ class RateLimitService(
 
     suspend fun checkUserRateLimit(userId: String, maxRequests: Long = 500, windowSeconds: Long = 60): RateLimitResult {
         val key = "$USER_RATE_LIMIT_KEY$userId"
-        return checkRateLimit(key, maxRequests, windowSeconds)
-    }
-
-    suspend fun checkApiKeyRateLimit(
-        apiKey: String,
-        maxRequests: Long = 1000,
-        windowSeconds: Long = 60,
-    ): RateLimitResult {
-        val key = "$API_KEY_RATE_LIMIT_KEY$apiKey"
         return checkRateLimit(key, maxRequests, windowSeconds)
     }
 
@@ -51,7 +52,6 @@ class RateLimitService(
     suspend fun checkMultipleRateLimits(
         ip: String?,
         userId: String?,
-        apiKey: String?,
         endpoint: String? = null,
         limits: RateLimitConfig = RateLimitConfig(),
     ): RateLimitResult =
@@ -71,15 +71,8 @@ class RateLimitService(
                     },
                 )
             }
-            apiKey?.let {
-                checks.add(
-                    async {
-                        checkApiKeyRateLimit(it, limits.apiKeyMaxRequests, limits.windowSeconds)
-                    },
-                )
-            }
             endpoint?.let { ep ->
-                val identifier = userId ?: apiKey ?: ip ?: "anonymous"
+                val identifier = userId ?: ip ?: "anonymous"
                 checks.add(
                     async {
                         checkEndpointRateLimit(ep, identifier, limits.endpointMaxRequests, limits.windowSeconds)
@@ -122,7 +115,6 @@ data class RateLimitResult(
 data class RateLimitConfig(
     val ipMaxRequests: Long = 1000,
     val userMaxRequests: Long = 500,
-    val apiKeyMaxRequests: Long = 1000,
     val endpointMaxRequests: Long = 100,
     val windowSeconds: Long = 60,
 )

@@ -52,10 +52,14 @@ data:
   # APP_CONFIG_SECURITY_API_KEY_MAX_REQUESTS: "1000"
   # APP_CONFIG_SECURITY_ENDPOINT_MAX_REQUESTS: "100"
   # APP_CONFIG_SECURITY_WINDOW_SECONDS: "60"
+  # Dedicated tight limit for the pre-auth login endpoint (single admin account):
+  # APP_CONFIG_SECURITY_LOGIN_MAX_REQUESTS: "10"
+  # APP_CONFIG_SECURITY_LOGIN_WINDOW_SECONDS: "60"
+  # APP_CONFIG_SECURITY_LOGIN_PATH: "/v1/auth/login"
   # Stance when Redis is unreachable (RateLimit source of truth):
-  #   FAIL_OPEN         — counters return 0, no throttle (default; matches read-heavy public traffic)
+  #   FAIL_OPEN         — counters return 0, NO throttle AND blacklist bypassed (fully disables protection)
   #   FAIL_CLOSED       — every request rejected; protects backend at cost of availability
-  #   HYBRID_IN_MEMORY  — fall back to per-pod ConcurrentHashMap counters (state NOT shared
-  #                       across pods → effective limit is multiplied by replica count, but
-  #                       single-source bursts still throttle)
-  APP_CONFIG_SECURITY_REDIS_FAILURE_MODE: "FAIL_OPEN"
+  #   HYBRID_IN_MEMORY  — fall back to per-pod ConcurrentHashMap counters (default). Tradeoff: state
+  #                       NOT shared across pods, so effective rate limit is multiplied by replica
+  #                       count — but bounded, unlike FAIL_OPEN which removes throttling entirely.
+  APP_CONFIG_SECURITY_REDIS_FAILURE_MODE: "HYBRID_IN_MEMORY"

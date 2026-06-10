@@ -46,7 +46,8 @@ class SecurityFilter(
             val request = exchange.request
             val clientIp = getClientIp(request)
             val userId = request.headers.getFirst("X-User-ID")
-            val apiKey = request.headers.getFirst("X-API-Key")
+            // X-API-Key was stripped by TrustHeaderStripFilter(-200) before this filter(-100) runs,
+            // so there is no API-key dimension to read here — it is intentionally absent (no consumer).
             val endpoint = request.path.pathWithinApplication().value()
             val config = appConfig.security
 
@@ -56,7 +57,7 @@ class SecurityFilter(
                         val isBlacklisted =
                             async {
                                 if (config.enableBlacklist) {
-                                    blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId, apiKey = apiKey)
+                                    blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId)
                                 } else {
                                     false
                                 }
@@ -68,13 +69,11 @@ class SecurityFilter(
                                     rateLimitService.checkMultipleRateLimits(
                                         ip = clientIp,
                                         userId = userId,
-                                        apiKey = apiKey,
                                         endpoint = endpoint,
                                         limits =
                                             RateLimitConfig(
                                                 ipMaxRequests = config.ipMaxRequests,
                                                 userMaxRequests = config.userMaxRequests,
-                                                apiKeyMaxRequests = config.apiKeyMaxRequests,
                                                 endpointMaxRequests = config.endpointMaxRequests,
                                                 windowSeconds = config.windowSeconds,
                                             ),
@@ -84,12 +83,29 @@ class SecurityFilter(
                                 }
                             }
 
+                        // /v1/auth/login is pre-auth (identity == IP) and single-admin, so the generic
+                        // 100/min endpoint quota is too loose. Run a dedicated tight IP-keyed check and
+                        // combine: block if EITHER exceeds, report the tighter remaining. Same
+                        // increment path → redisFailureMode/HYBRID fallback applies identically.
+                        val loginResult =
+                            async {
+                                if (config.enableRateLimit && endpoint == config.loginPath) {
+                                    rateLimitService.checkLoginRateLimit(
+                                        ip = clientIp,
+                                        maxRequests = config.loginMaxRequests,
+                                        windowSeconds = config.loginWindowSeconds,
+                                    )
+                                } else {
+                                    RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                                }
+                            }
+
                         val blacklisted = isBlacklisted.await()
-                        val rateLimit = rateLimitResult.await()
+                        val rateLimit = tighter(rateLimitResult.await(), loginResult.await())
 
                         when {
-                            blacklisted -> blockRequest(exchange, "BLACKLISTED", clientIp, userId, apiKey)
-                            !rateLimit.allowed -> blockRequest(exchange, "RATE_LIMITED", clientIp, userId, apiKey)
+                            blacklisted -> blockRequest(exchange, "BLACKLISTED", clientIp, userId)
+                            !rateLimit.allowed -> blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
                             else -> {
                                 addRateLimitHeaders(exchange.response, rateLimit)
                                 chain.filter(exchange).awaitSingleOrNull()
@@ -98,11 +114,15 @@ class SecurityFilter(
                     }
                 }
             } catch (e: TimeoutCancellationException) {
-                handleSecurityCheckFailure(exchange, chain, clientIp, userId, apiKey, "timeout", e)
+                handleSecurityCheckFailure(exchange, chain, clientIp, userId, "timeout", e)
             } catch (e: Exception) {
-                handleSecurityCheckFailure(exchange, chain, clientIp, userId, apiKey, "exception", e)
+                handleSecurityCheckFailure(exchange, chain, clientIp, userId, "exception", e)
             }
         }.then()
+
+    /** Combine two RateLimit results: block if either denies, otherwise carry the tighter remaining. */
+    private fun tighter(a: RateLimitResult, b: RateLimitResult): RateLimitResult =
+        if (a.remaining <= b.remaining) a else b
 
     /**
      * Decide what to do when the parallel security check itself fails or times out.
@@ -123,7 +143,6 @@ class SecurityFilter(
         chain: GatewayFilterChain,
         clientIp: String,
         userId: String?,
-        apiKey: String?,
         kind: String,
         cause: Throwable,
     ) {
@@ -136,7 +155,7 @@ class SecurityFilter(
             }
             RedisFailureMode.FAIL_CLOSED -> {
                 logger.error(cause) { "Security check $kind — denying request (mode=FAIL_CLOSED): IP: $clientIp" }
-                blockRequest(exchange, "RATE_LIMITED", clientIp, userId, apiKey)
+                blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
             }
         }
     }
@@ -146,7 +165,6 @@ class SecurityFilter(
         reason: String,
         clientIp: String,
         userId: String?,
-        apiKey: String?,
     ) {
         val requestId = exchange.request.headers.getFirst("X-Request-ID") ?: "-"
         val path =
@@ -154,8 +172,7 @@ class SecurityFilter(
                 .pathWithinApplication()
                 .value()
         auditLogger.warn {
-            "decision=BLOCK reason=$reason ip=$clientIp userId=$userId " +
-                "apiKey=${apiKey?.take(8)?.let { "$it..." }} path=$path requestId=$requestId"
+            "decision=BLOCK reason=$reason ip=$clientIp userId=$userId path=$path requestId=$requestId"
         }
 
         val (status, code, message) =

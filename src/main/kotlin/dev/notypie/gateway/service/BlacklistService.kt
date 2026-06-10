@@ -37,13 +37,12 @@ class BlacklistService(
         return redisModule.exists(key)
     }
 
-    suspend fun isAnyBlacklisted(ip: String, userId: String?, apiKey: String?): Boolean =
+    suspend fun isAnyBlacklisted(ip: String, userId: String?): Boolean =
         coroutineScope {
             val checks = mutableListOf<Deferred<Boolean>>()
 
             ip.let { checks.add(async { isBlacklisted(BlacklistType.IP, it) }) }
             userId?.let { checks.add(async { isBlacklisted(BlacklistType.USER, it) }) }
-            apiKey?.let { checks.add(async { isBlacklisted(BlacklistType.API_KEY, it) }) }
 
             if (checks.isEmpty()) {
                 false

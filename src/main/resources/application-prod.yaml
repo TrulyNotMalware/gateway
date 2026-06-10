@@ -44,7 +44,9 @@ spring:
                   - OPTIONS
                   - PATCH
                 allowed-headers:
-                  - "*"
+                  - Authorization
+                  - Content-Type
+                  - X-Request-ID
                 exposed-headers:
                   - X-Request-ID
                   - X-RateLimit-Remaining
@@ -165,7 +167,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,gateway,metrics
+        # `gateway` (route dump) omitted: it exposes the full route table = recon surface with no consumer.
+        include: health,info,prometheus,metrics
       base-path: /actuator
   endpoint:
     health:
