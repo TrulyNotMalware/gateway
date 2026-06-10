@@ -82,6 +82,9 @@ Deployment files are available in `src/main/resources/k8s/`.
 ```bash
 kubectl apply -f src/main/resources/k8s/deployment.yaml
 kubectl apply -f src/main/resources/k8s/service.yaml
+# Default-deny ingress/egress. NOTE: NetworkPolicy is only enforced if the cluster
+# CNI supports it (Calico/Cilium); on a plain flannel cluster it is a no-op.
+kubectl apply -f src/main/resources/k8s/networkpolicy.yaml
 ```
 
 ## Security Policy
@@ -95,15 +98,16 @@ Defaults live in `AppConfig.Security` (Kotlin) and can be overridden via env
 |---|---|---|
 | `ipMaxRequests` | 1000 / 60s | per source IP |
 | `userMaxRequests` | 500 / 60s | per authenticated user |
-| `apiKeyMaxRequests` | 1000 / 60s | per API key |
 | `endpointMaxRequests` | 100 / 60s | per (endpoint, identifier) |
+| `loginMaxRequests` | 10 / 60s | dedicated tight limit for `/v1/auth/login` (pre-auth, IP-keyed) |
 | `windowSeconds` | 60 | fixed window for all counters (Lua INCRBY + EXPIRE on first hit — a burst can straddle a window boundary and briefly allow up to 2× the limit) |
 
-`RateLimitService.checkMultipleRateLimits` runs IP/user/api-key/endpoint checks
+`RateLimitService.checkMultipleRateLimits` runs IP/user/endpoint checks
 in parallel and applies the **tightest** remaining quota. The endpoint key's
-identifier falls back `userId → apiKey → ip → "anonymous"`, so anonymous
-traffic is still partitioned by IP (one bot cannot exhaust the quota for other
-visitors).
+identifier falls back `userId → ip → "anonymous"`, so anonymous traffic is
+still partitioned by IP (one bot cannot exhaust the quota for other visitors).
+There is no API-key dimension: `X-API-Key` is stripped by `TrustHeaderStripFilter`
+before this filter runs, so it would always be null.
 
 Tune from real traffic by uncommenting the keys in
 `k8s/dok/configmap.yaml`; no code change required.

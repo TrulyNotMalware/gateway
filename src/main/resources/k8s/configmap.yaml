@@ -49,7 +49,6 @@ data:
   # Uncomment to override RateLimit thresholds:
   # APP_CONFIG_SECURITY_IP_MAX_REQUESTS: "1000"
   # APP_CONFIG_SECURITY_USER_MAX_REQUESTS: "500"
-  # APP_CONFIG_SECURITY_API_KEY_MAX_REQUESTS: "1000"
   # APP_CONFIG_SECURITY_ENDPOINT_MAX_REQUESTS: "100"
   # APP_CONFIG_SECURITY_WINDOW_SECONDS: "60"
   # Dedicated tight limit for the pre-auth login endpoint (single admin account):

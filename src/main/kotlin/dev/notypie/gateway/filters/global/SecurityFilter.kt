@@ -120,9 +120,17 @@ class SecurityFilter(
             }
         }.then()
 
-    /** Combine two RateLimit results: block if either denies, otherwise carry the tighter remaining. */
+    /**
+     * Combine two RateLimit results: block if EITHER denies, otherwise carry the tighter
+     * remaining. A denied result must win even when both have the same `remaining` (e.g. both 0),
+     * so check `allowed` first rather than relying on `remaining` as a proxy for it.
+     */
     private fun tighter(a: RateLimitResult, b: RateLimitResult): RateLimitResult =
-        if (a.remaining <= b.remaining) a else b
+        when {
+            !a.allowed -> a
+            !b.allowed -> b
+            else -> if (a.remaining <= b.remaining) a else b
+        }
 
     /**
      * Decide what to do when the parallel security check itself fails or times out.
