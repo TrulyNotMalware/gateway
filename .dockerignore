@@ -1,0 +1,15 @@
+# The image only needs the bootJar (build/libs/$JAR_FILE_NAME.jar). Exclude the rest
+# of the context so the build doesn't ship source, git history, or the gradle cache.
+.git/
+.gradle/
+.github/
+.idea/
+.vscode/
+.DS_Store
+src/
+gradle-config/
+k8s-local/
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
