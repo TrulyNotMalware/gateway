@@ -44,8 +44,17 @@ class SecurityFilter(
     override fun filter(exchange: ServerWebExchange, chain: GatewayFilterChain): Mono<Void> =
         mono {
             val request = exchange.request
-            val clientIp = getClientIp(request)
             val userId = request.headers.getFirst("X-User-ID")
+            val clientIp = getClientIp(request)
+            if (clientIp == null) {
+                // No resolvable peer address (should never happen on the normal
+                // istio → gateway path). Falling back to a literal "unknown" key
+                // would make every such request share one global rate-limit
+                // bucket — one client could exhaust it for all of them — so
+                // refuse the request instead.
+                blockRequest(exchange, "ACCESS_DENIED", "unknown", userId)
+                return@mono
+            }
             // X-API-Key was stripped by TrustHeaderStripFilter(-200) before this filter(-100) runs,
             // so there is no API-key dimension to read here — it is intentionally absent (no consumer).
             val endpoint = request.path.pathWithinApplication().value()
@@ -83,13 +92,14 @@ class SecurityFilter(
                                 }
                             }
 
-                        // /v1/auth/login is pre-auth (identity == IP) and single-admin, so the generic
-                        // 100/min endpoint quota is too loose. Run a dedicated tight IP-keyed check and
-                        // combine: block if EITHER exceeds, report the tighter remaining. Same
-                        // increment path → redisFailureMode/HYBRID fallback applies identically.
+                        // Login endpoints are pre-auth (identity == IP) with small fixed account
+                        // sets, so the generic 100/min endpoint quota is too loose. Run a dedicated
+                        // tight IP-keyed check and combine: block if EITHER exceeds, report the
+                        // tighter remaining. Same increment path → redisFailureMode/HYBRID fallback
+                        // applies identically.
                         val loginResult =
                             async {
-                                if (config.enableRateLimit && endpoint == config.loginPath) {
+                                if (config.enableRateLimit && endpoint in config.loginPaths) {
                                     rateLimitService.checkLoginRateLimit(
                                         ip = clientIp,
                                         maxRequests = config.loginMaxRequests,
@@ -221,7 +231,10 @@ class SecurityFilter(
      *
      * We therefore trust `remoteAddress` rather than parsing X-Forwarded-For / X-Real-IP directly.
      * Direct parsing would accept raw client headers without trusted-proxy validation and enable spoofing.
+     *
+     * Returns null when no peer address is resolvable; the caller refuses such requests
+     * rather than rate-limiting them under a shared fallback key.
      */
-    private fun getClientIp(request: ServerHttpRequest): String =
-        request.remoteAddress?.address?.hostAddress ?: "unknown"
+    private fun getClientIp(request: ServerHttpRequest): String? =
+        request.remoteAddress?.address?.hostAddress
 }

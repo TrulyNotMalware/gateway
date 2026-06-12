@@ -15,6 +15,14 @@ spring:
       server:
         webflux:
           # Trust k8s pod/service/ingress networks (10.x, 172.16-31.x, 192.168.x, loopback).
+          #
+          # SECURITY INVARIANT — this regex is only safe because k8s/networkpolicy.yaml
+          # restricts ingress to the istio-system data plane. Any pod matching this regex
+          # that can reach port 8080 directly could spoof X-Forwarded-For and evade
+          # per-IP rate limiting / blacklisting. If the NetworkPolicy is relaxed, narrow
+          # this regex to the cluster's actual pod CIDR (and vice versa). Prefer pinning
+          # it to the real pod CIDR anyway (e.g. only `10\.244\..*` on kubeadm/flannel,
+          # `192\.168\..*` on default Calico) instead of all RFC1918 ranges.
           trusted-proxies: "127\\.0\\.0\\.1|10\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*|192\\.168\\..*"
           metrics:
             enabled: true

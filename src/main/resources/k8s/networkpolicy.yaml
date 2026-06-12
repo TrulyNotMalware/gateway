@@ -24,6 +24,12 @@ spec:
     - Ingress
   ingress:
     # Public traffic from the Istio data plane → app port 8080.
+    #
+    # SECURITY INVARIANT — application-prod.yaml's `trusted-proxies` regex trusts the
+    # private ranges on the assumption that ONLY the istio-system data plane can reach
+    # port 8080. Widening this ingress rule lets any allowed pod spoof X-Forwarded-For
+    # (the gateway would treat it as a trusted proxy hop) and evade per-IP rate
+    # limiting / blacklisting. Change both together or not at all.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -94,14 +100,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # file backend — PRJ_FILE_URI = http://file-svc.file.svc.cluster.local:8080 (ns `file`).
-    # PLACEHOLDER: namespace is known from the ConfigMap, but the backend pod labels are NOT
-    # determinable from this repo (the file service is not yet introduced). Add a podSelector
-    # to tighten this once file-svc's labels are confirmed. HUMAN REVIEW REQUIRED.
+    # file backend (fileserver) — routed traffic + JWKS fetch.
+    # PRJ_FILE_URI = http://fileserver.fileserver.svc.cluster.local:80; the Service maps
+    # port 80 → containerPort 8880, and NetworkPolicy matches the POD port, hence 8880.
+    # Labels per fileserver/deploy/k8s/{deployment,service}.yaml.
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: file
+              kubernetes.io/metadata.name: fileserver
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fileserver
       ports:
         - protocol: TCP
-          port: 8080
+          port: 8880

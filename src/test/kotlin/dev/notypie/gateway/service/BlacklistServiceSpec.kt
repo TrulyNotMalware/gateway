@@ -43,16 +43,5 @@ class BlacklistServiceSpec :
                     svc.isAnyBlacklisted("", null) shouldBe false
                 }
             }
-
-            `when`("getBlacklistByType is called") {
-                val mod = InMemoryModule()
-                val svc = BlacklistService(mod)
-                svc.addIpToBlacklist("1.1.1.1")
-                svc.addIpToBlacklist("2.2.2.2")
-                then("only keys of that type are returned") {
-                    val ips = svc.getBlacklistByType(BlacklistType.IP)
-                    ips.size shouldBe 2
-                }
-            }
         }
     })

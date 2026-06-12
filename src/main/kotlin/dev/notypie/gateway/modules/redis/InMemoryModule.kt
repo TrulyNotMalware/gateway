@@ -104,11 +104,6 @@ class InMemoryModule :
         return true
     }
 
-    override suspend fun getKeysByPattern(pattern: String): Set<String> {
-        val regex = pattern.replace("*", ".*").toRegex()
-        return cache.keys.filter { regex.matches(it) }.toSet()
-    }
-
     override suspend fun get(key: String): String? = resolve(key)?.value
 
     override suspend fun exists(key: String): Boolean = resolve(key) != null

@@ -44,7 +44,12 @@ class SecurityFilterSpec :
             val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper)
 
             `when`("a single normal request arrives") {
-                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("5.5.5.5", 0)),
+                    )
                 var passed = false
                 val chain =
                     GatewayFilterChain {
@@ -125,7 +130,7 @@ class SecurityFilterSpec :
                             windowSeconds = 60,
                             loginMaxRequests = 10,
                             loginWindowSeconds = 60,
-                            loginPath = "/v1/auth/login",
+                            loginPaths = listOf("/v1/auth/login"),
                         ),
                 )
 
@@ -200,8 +205,6 @@ class SecurityFilterSpec :
 
                 override suspend fun delete(key: String): Boolean = false
 
-                override suspend fun getKeysByPattern(pattern: String): Set<String> = emptySet()
-
                 override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long {
                     // Long enough to outrun any reasonable timeoutMs in tests but cooperative
                     // (delay is cancellable, so withTimeout can interrupt it cleanly).
@@ -232,7 +235,12 @@ class SecurityFilterSpec :
             }
 
             `when`("mode=FAIL_OPEN and Redis stalls past the deadline") {
-                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.6.1", 0)),
+                    )
                 var passed = false
                 filterFor(RedisFailureMode.FAIL_OPEN)
                     .filter(
@@ -248,7 +256,12 @@ class SecurityFilterSpec :
             }
 
             `when`("mode=FAIL_CLOSED and Redis stalls past the deadline") {
-                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.6.2", 0)),
+                    )
                 var passed = false
                 filterFor(RedisFailureMode.FAIL_CLOSED)
                     .filter(
@@ -267,7 +280,12 @@ class SecurityFilterSpec :
             }
 
             `when`("mode=HYBRID_IN_MEMORY and Redis stalls past the deadline") {
-                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.6.3", 0)),
+                    )
                 var passed = false
                 filterFor(RedisFailureMode.HYBRID_IN_MEMORY)
                     .filter(
@@ -280,6 +298,87 @@ class SecurityFilterSpec :
                 then(
                     "the chain passes — HYBRID's contract is 'throttle when Redis is unreachable', not 'deny on slow Redis'",
                 ) {
+                    passed shouldBe true
+                }
+            }
+        }
+
+        given("SecurityFilter when the blacklist lookup itself fails") {
+            // Mirrors ReactiveRedissonClientModule.exists, which deliberately propagates
+            // Redis failures instead of fabricating `false` — otherwise the blacklist
+            // would silently turn off regardless of redisFailureMode.
+            class ThrowingExistsModule : RedisModule {
+                override suspend fun set(key: String, value: String, ttlSeconds: Long?): Boolean = false
+
+                override suspend fun get(key: String): String? = null
+
+                override suspend fun exists(key: String): Boolean = error("redis down")
+
+                override suspend fun delete(key: String): Boolean = false
+
+                override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long = 0L
+
+                override suspend fun remainingTtl(key: String): Long = -1L
+            }
+
+            fun filterFor(mode: RedisFailureMode): SecurityFilter {
+                val cfg =
+                    AppConfig(
+                        security =
+                            AppConfig.Security(
+                                timeoutMs = 2000,
+                                enableBlacklist = true,
+                                enableRateLimit = false,
+                                redisFailureMode = mode,
+                            ),
+                    )
+                return SecurityFilter(
+                    BlacklistService(ThrowingExistsModule()),
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                )
+            }
+
+            `when`("mode=FAIL_CLOSED and the blacklist check throws") {
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.7.1", 0)),
+                    )
+                var passed = false
+                filterFor(RedisFailureMode.FAIL_CLOSED)
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the request is denied — the blacklist must not silently disable") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+
+            `when`("mode=FAIL_OPEN and the blacklist check throws") {
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.7.2", 0)),
+                    )
+                var passed = false
+                filterFor(RedisFailureMode.FAIL_OPEN)
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the chain passes — availability preferred, per the configured stance") {
                     passed shouldBe true
                 }
             }
@@ -303,7 +402,12 @@ class SecurityFilterSpec :
                 )
 
             `when`("any request arrives") {
-                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.6.4", 0)),
+                    )
                 var passed = false
                 filter
                     .filter(
@@ -315,6 +419,28 @@ class SecurityFilterSpec :
                     ).awaitSingleOrNull()
                 then("the chain passes through") {
                     passed shouldBe true
+                }
+            }
+
+            `when`("a request arrives with no resolvable peer address") {
+                // Even with every check disabled the filter refuses an address-less
+                // request: a null remoteAddress would otherwise collapse all such
+                // requests into one shared rate-limit identity ("unknown").
+                val ex = MockServerWebExchange.from(MockServerHttpRequest.get("/v1/posts"))
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the request is refused with 403 ACCESS_DENIED") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.FORBIDDEN
+                    val body = ex.response.bodyAsString.awaitSingleOrNull() ?: ""
+                    body shouldContain "ACCESS_DENIED"
                 }
             }
         }

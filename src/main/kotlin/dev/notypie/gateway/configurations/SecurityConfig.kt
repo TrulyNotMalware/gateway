@@ -55,6 +55,9 @@ import java.time.Duration
  * Authorization policy:
  *   - public: GET `/v1/posts/`, `/v1/tags/`, `/v1/search/`, `/v1/content/`,
  *             POST `/v1/auth/login`, `/v1/auth/refresh`,
+ *             file-be auth flow: GET `/v1/files/auth/public-key` (needed pre-login to
+ *             RSA-encrypt the password), POST `/v1/files/auth/login`, `/v1/files/auth/refresh`,
+ *             `/v1/files/auth/logout` (cookie-only — no Bearer token after access expiry),
  *             `/fallback/`, `/actuator/` (mgmt port is separate but listed for safety)
  *   - everything else under `/v1/`: requires authentication
  */
@@ -78,6 +81,14 @@ class SecurityConfig(
                     .permitAll()
                     .pathMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/refresh")
                     .permitAll()
+                    .pathMatchers(HttpMethod.GET, "/v1/files/auth/public-key")
+                    .permitAll()
+                    .pathMatchers(
+                        HttpMethod.POST,
+                        "/v1/files/auth/login",
+                        "/v1/files/auth/refresh",
+                        "/v1/files/auth/logout",
+                    ).permitAll()
                     .pathMatchers(HttpMethod.OPTIONS, "/**")
                     .permitAll()
                     .pathMatchers("/fallback/**")

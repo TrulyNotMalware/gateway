@@ -51,15 +51,6 @@ class BlacklistService(
             }
         }
 
-    suspend fun getBlacklistByType(type: BlacklistType): Set<String> {
-        val pattern =
-            when (type) {
-                BlacklistType.IP -> "${IP_BLACKLIST_KEY}*"
-                BlacklistType.USER -> "${USER_BLACKLIST_KEY}*"
-                BlacklistType.API_KEY -> "${API_KEY_BLACKLIST_KEY}*"
-            }
-        return redisModule.getKeysByPattern(pattern)
-    }
 }
 
 enum class BlacklistType {

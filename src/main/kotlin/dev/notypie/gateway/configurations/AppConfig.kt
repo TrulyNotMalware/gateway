@@ -65,12 +65,13 @@ data class AppConfig(
         val userMaxRequests: Long = 500L,
         val endpointMaxRequests: Long = 100L,
         val windowSeconds: Long = 60L,
-        // /v1/auth/login is pre-auth, so its endpoint counter falls back to IP at endpointMaxRequests
-        // (100/min) — far too loose for a single admin account. These drive a dedicated tight
-        // IP-keyed check in SecurityFilter. Env-overridable: APP_CONFIG_SECURITY_LOGIN_*.
+        // Login endpoints are pre-auth, so their endpoint counter falls back to IP at
+        // endpointMaxRequests (100/min) — far too loose for small fixed account sets. These
+        // drive a dedicated tight IP-keyed check in SecurityFilter for every listed path.
+        // Env-overridable: APP_CONFIG_SECURITY_LOGIN_* (paths via _LOGIN_PATHS_0, _1, ...).
         val loginMaxRequests: Long = 10L,
         val loginWindowSeconds: Long = 60L,
-        val loginPath: String = "/v1/auth/login",
+        val loginPaths: List<String> = listOf("/v1/auth/login", "/v1/files/auth/login"),
         val strippedTrustHeaders: List<String> =
             listOf(
                 "X-User-ID",
@@ -79,10 +80,16 @@ data class AppConfig(
                 "X-Gateway-Auth",
             ),
         val gatewaySharedSecret: String = "",
-        // Stance when Redis (the source of truth for RateLimit counters) is unreachable.
-        // FAIL_OPEN -> increment returns 0 (no throttle); FAIL_CLOSED -> Long.MAX_VALUE
-        // (deny all); HYBRID_IN_MEMORY -> fall through to per-pod ConcurrentHashMap counter
-        // (state not shared across pods, but single-source bursts still throttle locally).
+        // Stance when Redis (the source of truth for RateLimit counters AND the blacklist)
+        // is unreachable.
+        // RateLimit: FAIL_OPEN -> increment returns 0 (no throttle); FAIL_CLOSED ->
+        // Long.MAX_VALUE (deny all); HYBRID_IN_MEMORY -> fall through to per-pod
+        // ConcurrentHashMap counter (state not shared across pods, but single-source
+        // bursts still throttle locally).
+        // Blacklist: a failed Redis lookup propagates to SecurityFilter's
+        // handleSecurityCheckFailure and follows the same stance — FAIL_CLOSED denies,
+        // FAIL_OPEN/HYBRID allow (there is no per-pod blacklist fallback: blacklist
+        // state is only meaningful cluster-wide).
         val redisFailureMode: RedisFailureMode = RedisFailureMode.HYBRID_IN_MEMORY,
     )
 

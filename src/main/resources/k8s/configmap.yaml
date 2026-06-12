@@ -15,8 +15,9 @@ data:
   # Downstream service k8s DNS.
   PRJ_DOK_URI: "http://dok-svc.dok.svc.cluster.local:8080"
   PRJ_BE_URI: "http://blog-app.blog.svc.cluster.local:8080"
-  # File service — replace with the real svc DNS when the service is introduced.
-  PRJ_FILE_URI: "http://file-svc.file.svc.cluster.local:8080"
+  # File service (fileserver) — Service `fileserver` in namespace `fileserver`,
+  # port 80 → containerPort 8880 (see fileserver/deploy/k8s/service.yaml).
+  PRJ_FILE_URI: "http://fileserver.fileserver.svc.cluster.local:80"
 
   SPRING_PROFILES_ACTIVE: "prod"
 
@@ -38,10 +39,11 @@ data:
   APP_CONFIG_JWT_ISSUERS_0_ISSUER: "blog-be"
   APP_CONFIG_JWT_ISSUERS_0_JWKS_URI: "http://blog-app.blog.svc.cluster.local:8080/.well-known/jwks.json"
   APP_CONFIG_JWT_ISSUERS_0_AUDIENCE: "blog-be"
-  # Example second issuer (uncomment + replace with real DNS when file-svc is introduced):
-  # APP_CONFIG_JWT_ISSUERS_1_ISSUER: "file-be"
-  # APP_CONFIG_JWT_ISSUERS_1_JWKS_URI: "http://file-svc.file.svc.cluster.local:8080/.well-known/jwks.json"
-  # APP_CONFIG_JWT_ISSUERS_1_AUDIENCE: "file-be"
+  # file-be (fileserver) — iss/aud must match the fileserver's auth.issuer / auth.audience
+  # config (defaults: file-be).
+  APP_CONFIG_JWT_ISSUERS_1_ISSUER: "file-be"
+  APP_CONFIG_JWT_ISSUERS_1_JWKS_URI: "http://fileserver.fileserver.svc.cluster.local:80/.well-known/jwks.json"
+  APP_CONFIG_JWT_ISSUERS_1_AUDIENCE: "file-be"
 
   # APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET is injected via Secret (must equal blog_be's GATEWAY_SHARED_SECRET).
 
@@ -51,10 +53,12 @@ data:
   # APP_CONFIG_SECURITY_USER_MAX_REQUESTS: "500"
   # APP_CONFIG_SECURITY_ENDPOINT_MAX_REQUESTS: "100"
   # APP_CONFIG_SECURITY_WINDOW_SECONDS: "60"
-  # Dedicated tight limit for the pre-auth login endpoint (single admin account):
+  # Dedicated tight limit for the pre-auth login endpoints (small fixed account sets).
+  # Defaults cover blog-be and file-be; override the indexed list to change:
   # APP_CONFIG_SECURITY_LOGIN_MAX_REQUESTS: "10"
   # APP_CONFIG_SECURITY_LOGIN_WINDOW_SECONDS: "60"
-  # APP_CONFIG_SECURITY_LOGIN_PATH: "/v1/auth/login"
+  # APP_CONFIG_SECURITY_LOGIN_PATHS_0: "/v1/auth/login"
+  # APP_CONFIG_SECURITY_LOGIN_PATHS_1: "/v1/files/auth/login"
   # Stance when Redis is unreachable (RateLimit source of truth):
   #   FAIL_OPEN         — counters return 0, NO throttle AND blacklist bypassed (fully disables protection)
   #   FAIL_CLOSED       — every request rejected; protects backend at cost of availability

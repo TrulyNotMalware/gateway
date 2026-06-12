@@ -1,7 +1,6 @@
 package dev.notypie.gateway.modules.redis
 
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.delay
@@ -68,20 +67,6 @@ class InMemoryModuleSpec :
                     mod.get("expiring") shouldBe null
                     mod.exists("expiring") shouldBe false
                     mod.remainingTtl("expiring") shouldBe -2L
-                }
-            }
-        }
-
-        given("InMemoryModule pattern search") {
-            `when`("keys with multiple prefixes are set and queried by pattern") {
-                val mod = InMemoryModule()
-                mod.set("blacklist:ip:1.1.1.1", "1")
-                mod.set("blacklist:ip:2.2.2.2", "1")
-                mod.set("blacklist:user:alice", "spam")
-                then("only keys matching the pattern are returned") {
-                    val ips = mod.getKeysByPattern("blacklist:ip:*")
-                    ips shouldContainAll setOf("blacklist:ip:1.1.1.1", "blacklist:ip:2.2.2.2")
-                    ips.contains("blacklist:user:alice") shouldBe false
                 }
             }
         }

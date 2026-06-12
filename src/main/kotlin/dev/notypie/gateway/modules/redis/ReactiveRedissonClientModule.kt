@@ -6,7 +6,6 @@ import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.awaitSingle
 import org.redisson.api.RScript
 import org.redisson.api.RedissonReactiveClient
-import org.redisson.api.options.KeysScanParams
 import org.redisson.client.codec.LongCodec
 import java.time.Duration
 
@@ -43,12 +42,17 @@ class ReactiveRedissonClientModule(
             logger.error { "Failed to get key=$key, exception=${ex.message}" }
         }.getOrNull()
 
+    // Deliberately NOT swallowed: `exists` backs the blacklist check. Returning a
+    // fabricated `false` on Redis failure would silently disable the blacklist
+    // regardless of redisFailureMode. Propagating lets SecurityFilter's
+    // handleSecurityCheckFailure apply the operator's configured stance instead
+    // (FAIL_CLOSED → deny, FAIL_OPEN/HYBRID → allow).
     override suspend fun exists(key: String): Boolean =
         runCatching {
             bucket(key).isExists().awaitSingle()
         }.onFailure { ex ->
             logger.error { "Failed to check exists key=$key, exception=${ex.message}" }
-        }.getOrElse { false }
+        }.getOrThrow()
 
     override suspend fun delete(key: String): Boolean =
         runCatching {
@@ -56,17 +60,6 @@ class ReactiveRedissonClientModule(
         }.onFailure { ex ->
             logger.error { "Failed to delete key=$key, exception=${ex.message}" }
         }.getOrElse { false }
-
-    override suspend fun getKeysByPattern(pattern: String): Set<String> =
-        runCatching {
-            client.keys
-                .getKeys(KeysScanParams().pattern(pattern))
-                .collectList()
-                .awaitSingle()
-                .toSet()
-        }.onFailure { ex ->
-            logger.error { "Failed to get keys by pattern=$pattern, exception=${ex.message}" }
-        }.getOrElse { emptySet() }
 
     // Lua script ensures INCRBY + EXPIRE are atomic: the TTL is set only on the
     // first increment of a window, and a crash between the two operations cannot
