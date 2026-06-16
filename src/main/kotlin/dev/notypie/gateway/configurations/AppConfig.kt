@@ -59,6 +59,9 @@ data class AppConfig(
 
     data class Security(
         val timeoutMs: Long = 1000L,
+        // Trusted proxies in front of the gateway that append to X-Forwarded-For (istio ingress = 1).
+        // Env: APP_CONFIG_SECURITY_TRUSTED_PROXY_HOPS.
+        val trustedProxyHops: Int = 1,
         val enableBlacklist: Boolean = true,
         val enableRateLimit: Boolean = true,
         val ipMaxRequests: Long = 1000L,

@@ -13,6 +13,7 @@ import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
+import org.springframework.cloud.gateway.support.ipresolver.XForwardedRemoteAddressResolver
 import org.springframework.http.HttpStatus
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.mock.web.server.MockServerWebExchange
@@ -24,6 +25,7 @@ class SecurityFilterSpec :
     BehaviorSpec({
 
         val jsonMapper: JsonMapper = JsonMapper.builder().build()
+        val resolver = XForwardedRemoteAddressResolver.maxTrustedIndex(1)
 
         given("SecurityFilter with Blacklist=on, RateLimit=on") {
             val cfg =
@@ -41,7 +43,7 @@ class SecurityFilterSpec :
                 )
             val blacklist = BlacklistService(InMemoryModule())
             val rateLimit = RateLimitService(InMemoryModule())
-            val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper)
+            val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
 
             `when`("a single normal request arrives") {
                 val ex =
@@ -115,6 +117,82 @@ class SecurityFilterSpec :
             }
         }
 
+        given("client IP resolution behind a proxy (XFF)") {
+            // maxTrustedIndex(1) keys on the rightmost-trusted XFF entry (what istio appends),
+            // ignoring any client-forged leftmost entry; with no XFF it falls back to the socket peer.
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = true,
+                            enableRateLimit = true,
+                            // Loose enough that only the blacklist can trip here.
+                            ipMaxRequests = 100000,
+                            userMaxRequests = 100000,
+                            endpointMaxRequests = 100000,
+                            windowSeconds = 60,
+                        ),
+                )
+
+            `when`("a blacklisted real client hides behind a spoofed leftmost XFF entry") {
+                val blacklist = BlacklistService(InMemoryModule())
+                blacklist.addIpToBlacklist("1.1.1.1")
+                val filter = SecurityFilter(blacklist, RateLimitService(InMemoryModule()), cfg, jsonMapper, resolver)
+
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .header("X-Forwarded-For", "9.9.9.9, 1.1.1.1")
+                            .remoteAddress(InetSocketAddress("10.0.0.1", 0)),
+                    )
+                var passed = false
+                val chain =
+                    GatewayFilterChain {
+                        passed = true
+                        Mono.empty()
+                    }
+                filter.filter(ex, chain).awaitSingleOrNull()
+                then("the filter keys on the trusted 1.1.1.1 and blocks it, not the forged 9.9.9.9") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.FORBIDDEN
+                    val body = ex.response.bodyAsString.awaitSingleOrNull() ?: ""
+                    body shouldContain "BLACKLISTED"
+                }
+            }
+
+            `when`("a normal request carries a single X-Forwarded-For entry") {
+                val filter =
+                    SecurityFilter(
+                        BlacklistService(InMemoryModule()),
+                        RateLimitService(InMemoryModule()),
+                        cfg,
+                        jsonMapper,
+                        resolver,
+                    )
+
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .header("X-Forwarded-For", "1.1.1.1")
+                            .remoteAddress(InetSocketAddress("10.0.0.1", 0)),
+                    )
+                var passed = false
+                val chain =
+                    GatewayFilterChain {
+                        passed = true
+                        Mono.empty()
+                    }
+                filter.filter(ex, chain).awaitSingleOrNull()
+                then("the IP resolves and the chain passes with RateLimit info stamped") {
+                    passed shouldBe true
+                    ex.response.headers.getFirst("X-RateLimit-Remaining") shouldNotBe null
+                }
+            }
+        }
+
         given("SecurityFilter with a tight login rate limit") {
             val cfg =
                 AppConfig(
@@ -136,7 +214,7 @@ class SecurityFilterSpec :
 
             `when`("the 11th login attempt within the window arrives from the same IP") {
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper)
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
 
                 fun loginRequest() =
                     MockServerWebExchange.from(
@@ -165,7 +243,7 @@ class SecurityFilterSpec :
 
             `when`("a non-login path is hit many times from the same IP") {
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper)
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
 
                 fun postsRequest() =
                     MockServerWebExchange.from(
@@ -231,6 +309,7 @@ class SecurityFilterSpec :
                     RateLimitService(StallingRedisModule()),
                     cfg,
                     jsonMapper,
+                    resolver,
                 )
             }
 
@@ -337,6 +416,7 @@ class SecurityFilterSpec :
                     RateLimitService(InMemoryModule()),
                     cfg,
                     jsonMapper,
+                    resolver,
                 )
             }
 
@@ -399,6 +479,7 @@ class SecurityFilterSpec :
                     RateLimitService(InMemoryModule()),
                     cfg,
                     jsonMapper,
+                    resolver,
                 )
 
             `when`("any request arrives") {

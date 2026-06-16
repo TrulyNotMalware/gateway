@@ -15,10 +15,10 @@ import kotlinx.coroutines.reactor.mono
 import kotlinx.coroutines.withTimeout
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
+import org.springframework.cloud.gateway.support.ipresolver.RemoteAddressResolver
 import org.springframework.core.Ordered
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
-import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.http.server.reactive.ServerHttpResponse
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
@@ -32,6 +32,7 @@ class SecurityFilter(
     private val rateLimitService: RateLimitService,
     private val appConfig: AppConfig,
     private val jsonMapper: JsonMapper,
+    private val remoteAddressResolver: RemoteAddressResolver,
 ) : GlobalFilter,
     Ordered {
     private val logger = KotlinLogging.logger {}
@@ -45,7 +46,7 @@ class SecurityFilter(
         mono {
             val request = exchange.request
             val userId = request.headers.getFirst("X-User-ID")
-            val clientIp = getClientIp(request)
+            val clientIp = getClientIp(exchange)
             if (clientIp == null) {
                 // No resolvable peer address (should never happen on the normal
                 // istio → gateway path). Falling back to a literal "unknown" key
@@ -225,16 +226,13 @@ class SecurityFilter(
     }
 
     /**
-     * Resolve the client IP — Spring Cloud Gateway's `trusted-proxies` plus
-     * `server.forward-headers-strategy=framework` populates `ServerHttpRequest.remoteAddress`
-     * with the first untrusted hop after stripping the trusted-proxy chain.
-     *
-     * We therefore trust `remoteAddress` rather than parsing X-Forwarded-For / X-Real-IP directly.
-     * Direct parsing would accept raw client headers without trusted-proxy validation and enable spoofing.
+     * Resolve the client IP via `XForwardedRemoteAddressResolver(maxTrustedIndex = trustedProxyHops)`.
+     * It trusts N hops from the right of X-Forwarded-For, so a client cannot spoof a leftmost-prepended
+     * address; with no XFF (in-cluster) it falls back to the socket peer.
      *
      * Returns null when no peer address is resolvable; the caller refuses such requests
      * rather than rate-limiting them under a shared fallback key.
      */
-    private fun getClientIp(request: ServerHttpRequest): String? =
-        request.remoteAddress?.address?.hostAddress
+    private fun getClientIp(exchange: ServerWebExchange): String? =
+        remoteAddressResolver.resolve(exchange)?.address?.hostAddress
 }

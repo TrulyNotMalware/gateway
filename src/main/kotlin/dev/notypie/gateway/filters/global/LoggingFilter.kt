@@ -5,14 +5,16 @@ import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.reactor.mono
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.filter.GlobalFilter
+import org.springframework.cloud.gateway.support.ipresolver.RemoteAddressResolver
 import org.springframework.core.Ordered
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 
 @Component
-class LoggingFilter :
-    GlobalFilter,
+class LoggingFilter(
+    private val remoteAddressResolver: RemoteAddressResolver,
+) : GlobalFilter,
     Ordered {
     private val logger = KotlinLogging.logger {}
 
@@ -23,8 +25,8 @@ class LoggingFilter :
             val request = exchange.request
             val start = System.currentTimeMillis()
             val requestId = request.headers.getFirst("X-Request-ID") ?: "-"
-            // trusted-proxies + forward-headers-strategy=framework already populates remoteAddress with the client IP.
-            val ip = request.remoteAddress?.address?.hostAddress ?: "-"
+            // Resolve the real client IP behind the istio hop (trusts N hops from the right of XFF).
+            val ip = remoteAddressResolver.resolve(exchange)?.address?.hostAddress ?: "-"
 
             try {
                 chain.filter(exchange).awaitSingleOrNull()

@@ -50,7 +50,6 @@ class BlacklistService(
                 checks.awaitAll().any { it }
             }
         }
-
 }
 
 enum class BlacklistType {

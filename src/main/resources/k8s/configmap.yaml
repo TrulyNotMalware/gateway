@@ -48,6 +48,7 @@ data:
   # APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET is injected via Secret (must equal blog_be's GATEWAY_SHARED_SECRET).
 
   # Security policy (RateLimit thresholds / Redis-failure stance) — see gateway/README.md.
+  # APP_CONFIG_SECURITY_TRUSTED_PROXY_HOPS: "1"   # proxies appending to XFF in front of gateway (istio=1). Bump to 2 if the post-deploy spoof test shows all clients sharing one IP bucket.
   # Uncomment to override RateLimit thresholds:
   # APP_CONFIG_SECURITY_IP_MAX_REQUESTS: "1000"
   # APP_CONFIG_SECURITY_USER_MAX_REQUESTS: "500"
