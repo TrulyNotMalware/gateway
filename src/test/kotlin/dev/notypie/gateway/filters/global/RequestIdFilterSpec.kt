@@ -88,9 +88,9 @@ class RequestIdFilterSpec :
 
                 then("malicious input is rejected and a fresh UUID is used") {
                     dsA!!.request.headers.getFirst("X-Request-ID") shouldNotBe bad
-                    dsA!!.request.headers.getFirst("X-Request-ID") shouldNotBe null
+                    dsA.request.headers.getFirst("X-Request-ID") shouldNotBe null
                     dsB!!.request.headers.getFirst("X-Request-ID") shouldNotBe injection
-                    dsB!!.request.headers.getFirst("X-Request-ID") shouldNotBe null
+                    dsB.request.headers.getFirst("X-Request-ID") shouldNotBe null
                 }
             }
         }

@@ -112,7 +112,7 @@ class SecurityValidatorsSpec :
                 then("validation fails on sub") {
                     val r = validator.validate(token(sub = null))
                     r.hasErrors() shouldBe true
-                    r.errors.any { it.description.contains("sub") } shouldBe true
+                    r.errors.any { it.description?.contains("sub") == true } shouldBe true
                 }
             }
 
@@ -120,7 +120,7 @@ class SecurityValidatorsSpec :
                 then("validation fails on exp — default chain only checks expiry of present exp") {
                     val r = validator.validate(token(exp = null))
                     r.hasErrors() shouldBe true
-                    r.errors.any { it.description.contains("exp") } shouldBe true
+                    r.errors.any { it.description?.contains("exp") == true } shouldBe true
                 }
             }
 

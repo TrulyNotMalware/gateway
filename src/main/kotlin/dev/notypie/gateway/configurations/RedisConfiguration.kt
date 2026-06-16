@@ -32,7 +32,6 @@ class RedisClusterConfiguration(
                         *appConfig.redis.cluster.nodes
                             .toTypedArray(),
                     )
-                    password = appConfig.redis.password
                     connectTimeout = appConfig.redis.connectTimeout
                     timeout = appConfig.redis.timeout
                     retryAttempts = appConfig.redis.retryAttempts
@@ -51,11 +50,13 @@ class RedisClusterConfiguration(
                     // on failed
                     failedSlaveReconnectionInterval = appConfig.redis.cluster.failedSlaveReconnectionInterval
                     failedSlaveNodeDetector = appConfig.redis.cluster.failedNodeDetector.detector
-
-                    isKeepAlive = true
-                    isTcpNoDelay = true
                 }
                 codec = JsonJacksonCodec(objectMapper)
+                // Redisson 4.x deprecated the per-server password/keepAlive/tcpNoDelay setters
+                // in favour of the top-level Config; set them here to stay on the supported API.
+                password = appConfig.redis.password
+                setTcpKeepAlive(true)
+                setTcpNoDelay(true)
                 // threads
                 threads = appConfig.redis.threads
                 nettyThreads = appConfig.redis.nettyThreads
@@ -98,7 +99,6 @@ class RedisConfiguration(
                 useSingleServer().apply {
                     // Base
                     address = "redis://${appConfig.redis.host}:${appConfig.redis.port}"
-                    password = appConfig.redis.password
                     connectTimeout = appConfig.redis.connectTimeout
                     timeout = appConfig.redis.timeout
                     retryAttempts = appConfig.redis.retryAttempts
@@ -107,12 +107,14 @@ class RedisConfiguration(
                     // connection pool setup
                     connectionPoolSize = appConfig.redis.standaloneConnectionPoolSize
                     connectionMinimumIdleSize = appConfig.redis.standaloneConnectionMinimumIdleSize
-
-                    isKeepAlive = true
-                    isTcpNoDelay = true
                 }
                 codec = JsonJacksonCodec(objectMapper)
 
+                // Redisson 4.x deprecated the per-server password/keepAlive/tcpNoDelay setters
+                // in favour of the top-level Config; set them here to stay on the supported API.
+                password = appConfig.redis.password
+                setTcpKeepAlive(true)
+                setTcpNoDelay(true)
                 // threads
                 threads = appConfig.redis.threads
                 nettyThreads = appConfig.redis.nettyThreads

@@ -2,9 +2,9 @@ import org.gradle.kotlin.dsl.withType
 import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
 
 plugins {
-    kotlin("jvm") version "2.3.21"
-    kotlin("plugin.spring") version "2.3.21"
-    id("org.springframework.boot") version "4.0.6"
+    kotlin("jvm") version "2.4.0"
+    kotlin("plugin.spring") version "2.4.0"
+    id("org.springframework.boot") version "4.1.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
@@ -13,14 +13,14 @@ group = "dev.notypie"
 version = "alpha"
 
 // remove ext
-val springCloudVersion by extra("2025.1.1")
-val kotestVersion by extra("6.1.11")
-val mockkVersion by extra("1.14.9")
-val springBootVersion by extra("4.0.6")
-val redissonVersion by extra("3.52.0")
+val springCloudVersion by extra("2025.1.2")
+val kotestVersion by extra("6.2.0")
+val mockkVersion by extra("1.14.11")
+val springBootVersion by extra("4.1.0")
+val redissonVersion by extra("4.6.0")
 val kotlinxVersion by extra("1.11.0")
-val reactorKotlinExtensionVersion by extra("1.3.0")
-val kotlinLoggingVersion by extra("7.0.14")
+val reactorKotlinExtensionVersion by extra("1.3.1")
+val kotlinLoggingVersion by extra("8.0.4")
 
 repositories {
     mavenCentral()
@@ -38,7 +38,8 @@ kotlin {
     compilerOptions {
         freeCompilerArgs.addAll(
             "-Xjsr305=strict",
-            "-Xannotation-default-target=param-property",
+            // -Xannotation-default-target=param-property dropped: it is the default in Kotlin 2.4+
+            // and the compiler now flags it as redundant.
             "-java-parameters",
             "-jvm-default=no-compatibility",
         )

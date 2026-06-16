@@ -307,6 +307,11 @@ class AccessTokenTypeValidator : OAuth2TokenValidator<Jwt> {
  * this explicitly rejects null/empty as well as mismatches.
  */
 fun audienceValidator(expected: String): OAuth2TokenValidator<Jwt> =
-    JwtClaimValidator<List<String>?>(JwtClaimNames.AUD) { aud ->
+    // Spring Security 7's JwtClaimValidator pins the type parameter to a non-null bound
+    // (JSpecify), so the converter type is List<String>. A missing `aud` already fails inside
+    // JwtClaimValidator before the predicate runs, and the Nimbus decoder normalises RFC
+    // string-form `aud` to a List, so the predicate sees a List<String>. The defensive
+    // isNullOrEmpty() is kept as a belt-and-braces guard; && short-circuits before `in`.
+    JwtClaimValidator<List<String>>(JwtClaimNames.AUD) { aud ->
         !aud.isNullOrEmpty() && expected in aud
     }

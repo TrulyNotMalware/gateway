@@ -77,7 +77,7 @@ class ReactiveRedissonClientModule(
                     end
                     return v
                     """.trimIndent(),
-                    RScript.ReturnType.INTEGER,
+                    RScript.ReturnType.LONG,
                     listOf(key),
                     count.toString(),
                     ttlSeconds.toString(),
