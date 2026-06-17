@@ -28,4 +28,4 @@ jobs:
       # Submits the resolved Gradle dependency graph so Dependabot can raise
       # vulnerability alerts against this repo's actual dependency set.
       - name: Submit dependency graph
-        uses: gradle/actions/dependency-submission@v4
+        uses: gradle/actions/dependency-submission@v6
