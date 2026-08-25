@@ -15,7 +15,7 @@ substituted by the deployment pipeline or by hand.
 | `deployment.yaml` | `api-gateway-deploy`, 2 replicas, RollingUpdate `maxUnavailable: 0`, ports 8080 (http) + 8081 (mgmt), `terminationGracePeriodSeconds: 45`, Prometheus scrape annotations |
 | `service.yaml` | `api-gateway-svc`, port 80 → targetPort `http` |
 | `configmap.yaml` | `api-gateway-cm` — downstream URIs, timeouts, Redis cluster seed, JWT issuer triples, `JAVA_TOOL_OPTIONS` |
-| `secret.example.yaml` | Template only. `APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET` + `APP_CONFIG_REDIS_PASSWORD`. **Never commit a populated copy** |
+| `secret.example.yaml` | Template only. `APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET`, `APP_CONFIG_REDIS_PASSWORD`, and the optional `APP_CONFIG_SECURITY_ALLOWED_API_KEYS_<N>`. **Never commit a populated copy** |
 | `networkpolicy.yaml` | Default-deny ingress and egress, then explicit allows |
 | `httproute.yaml` | Gateway API `HTTPRoute` binding the public hostname to `api-gateway-svc` |
 
@@ -49,8 +49,8 @@ Egress to the new backend's JWKS port must also be allowed in `networkpolicy.yam
 prod. Generate with `openssl rand -hex 32`.
 
 **`secretRef` is `optional: false`** in `deployment.yaml` — a missing Secret crashes the pod
-rather than letting it boot without a Redis password. Note that `secret.example.yaml`'s header
-comment still claims `optional: true`; the comment is stale, the manifest is authoritative.
+rather than letting it boot without a Redis password. Do not read a scheduled pod as evidence
+that only the ConfigMap matters.
 
 ### Ports
 8080 is the app port and 8081 is the management port; they are separated so actuator is never
