@@ -76,7 +76,7 @@ class AppConfigValidator(
             throw IllegalStateException(
                 "Invalid configuration: app.config.jwt.issuers must contain at least one entry in prod. " +
                     "Wire it via APP_CONFIG_JWT_ISSUERS_0_ISSUER + APP_CONFIG_JWT_ISSUERS_0_JWKS_URI " +
-                    "(see gateway/src/main/resources/k8s/dok/configmap.yaml).",
+                    "(see src/main/resources/k8s/configmap.yaml).",
             )
         }
         issuers.forEachIndexed { idx, entry ->
