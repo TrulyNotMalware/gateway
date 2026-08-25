@@ -2,10 +2,12 @@ name: Security Scan
 on:
   push:
     branches: ["main", "master"]
-  pull_request:
-    branches: ["main", "master"]
   schedule:
     - cron: "0 6 * * 1"
+  # Dependabot-triggered pull_request runs get a read-only GITHUB_TOKEN, so
+  # snapshot submission always 403s there. The graph is tracked per default
+  # branch anyway, so only main pushes / the weekly cron need to submit.
+  workflow_dispatch:
 
 permissions:
   contents: write
