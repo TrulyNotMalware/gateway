@@ -39,6 +39,30 @@ class TrustHeaderStripFilterSpec :
                     ds.getFirst("X-API-Key") shouldBe null
                     ds.getFirst("X-Request-ID") shouldBe "should-survive"
                 }
+
+                then("the inbound API key is captured for SecurityFilter before being stripped") {
+                    downstream!!
+                        .getAttribute<String>(TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR) shouldBe "spoofed-key"
+                }
+            }
+
+            `when`("no X-API-Key is supplied") {
+                val exchange =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest.get("/v1/posts").header("X-User-ID", "spoofed"),
+                    )
+                var downstream: ServerWebExchange? = null
+                val chain =
+                    GatewayFilterChain { ex ->
+                        downstream = ex
+                        Mono.empty()
+                    }
+                filter.filter(exchange, chain).awaitSingleOrNull()
+
+                then("no capture attribute is set") {
+                    downstream!!
+                        .getAttribute<String>(TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR) shouldBe null
+                }
             }
 
             `when`("no strip-target header is present") {

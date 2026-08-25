@@ -68,6 +68,19 @@ data class AppConfig(
         val userMaxRequests: Long = 500L,
         val endpointMaxRequests: Long = 100L,
         val windowSeconds: Long = 60L,
+        // Optional per-API-key dimension. X-API-Key is stripped at TrustHeaderStripFilter(-200)
+        // because downstream services trust it, so that filter captures the inbound value into an
+        // exchange attribute for SecurityFilter(-100) to read.
+        //
+        // The limit applies ONLY to keys listed in `allowedApiKeys`. An unrecognised key is
+        // ignored rather than given its own counter — otherwise a client could mint a fresh
+        // bucket per request just by sending a random header, which is worse than no dimension
+        // at all. An empty list (the default) disables the dimension entirely.
+        //
+        // Env: APP_CONFIG_SECURITY_API_KEY_MAX_REQUESTS,
+        //      APP_CONFIG_SECURITY_ALLOWED_API_KEYS_0, _1, ...
+        val apiKeyMaxRequests: Long = 1000L,
+        val allowedApiKeys: List<String> = emptyList(),
         // Login endpoints are pre-auth, so their endpoint counter falls back to IP at
         // endpointMaxRequests (100/min) — far too loose for small fixed account sets. These
         // drive a dedicated tight IP-keyed check in SecurityFilter for every listed path.

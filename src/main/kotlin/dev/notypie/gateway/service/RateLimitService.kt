@@ -17,6 +17,25 @@ class RateLimitService(
         private const val USER_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}user:"
         private const val ENDPOINT_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}endpoint:"
         private const val LOGIN_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}login:"
+        private const val API_KEY_RATE_LIMIT_KEY = "${RATE_LIMIT_KEY_PREFIX}api_key:"
+    }
+
+    /**
+     * Per-API-key limit under its own prefix so it never collides with the IP counter.
+     *
+     * The caller ([dev.notypie.gateway.filters.global.SecurityFilter]) only reaches this for keys
+     * listed in `app.config.security.allowed-api-keys` — an unrecognised key must not be given a
+     * counter, or a client could mint a fresh bucket per request with a random header. Goes
+     * through the same `redisModule.increment` path, so `redisFailureMode` / HYBRID fallback
+     * applies identically.
+     */
+    suspend fun checkApiKeyRateLimit(
+        apiKey: String,
+        maxRequests: Long = 1000,
+        windowSeconds: Long = 60,
+    ): RateLimitResult {
+        val key = "$API_KEY_RATE_LIMIT_KEY$apiKey"
+        return checkRateLimit(key, maxRequests, windowSeconds)
     }
 
     /**

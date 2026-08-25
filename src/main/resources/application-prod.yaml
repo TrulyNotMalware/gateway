@@ -247,6 +247,10 @@ app:
       timeout-ms: 1000
       ip-max-requests: 1000
       user-max-requests: 500
+      # Per-API-key limit. Inert until `allowed-api-keys` is populated — the gateway only
+      # counts keys it recognises, so an unknown X-API-Key falls through to the IP counter
+      # instead of getting a bucket of its own. Wire the key list from the Secret:
+      #   APP_CONFIG_SECURITY_ALLOWED_API_KEYS_0, _1, ...
       api-key-max-requests: 1000
       endpoint-max-requests: 100
       window-seconds: 60

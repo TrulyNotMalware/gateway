@@ -54,6 +54,11 @@ data:
   # APP_CONFIG_SECURITY_USER_MAX_REQUESTS: "500"
   # APP_CONFIG_SECURITY_ENDPOINT_MAX_REQUESTS: "100"
   # APP_CONFIG_SECURITY_WINDOW_SECONDS: "60"
+  # Per-API-key limit. Only keys listed in ALLOWED_API_KEYS get their own counter; anything else
+  # is ignored so a random header cannot mint a fresh bucket. Put the key values in the Secret,
+  # not here — this ConfigMap is world-readable within the namespace.
+  # APP_CONFIG_SECURITY_API_KEY_MAX_REQUESTS: "1000"
+  # APP_CONFIG_SECURITY_ALLOWED_API_KEYS_0: "<from Secret>"
   # Dedicated tight limit for the pre-auth login endpoints (small fixed account sets).
   # Defaults cover blog-be and file-be; override the indexed list to change:
   # APP_CONFIG_SECURITY_LOGIN_MAX_REQUESTS: "10"

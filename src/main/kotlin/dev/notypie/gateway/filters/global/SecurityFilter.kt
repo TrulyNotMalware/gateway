@@ -56,10 +56,17 @@ class SecurityFilter(
                 blockRequest(exchange, "ACCESS_DENIED", "unknown", userId)
                 return@mono
             }
-            // X-API-Key was stripped by TrustHeaderStripFilter(-200) before this filter(-100) runs,
-            // so there is no API-key dimension to read here — it is intentionally absent (no consumer).
             val endpoint = request.path.pathWithinApplication().value()
             val config = appConfig.security
+            // TrustHeaderStripFilter(-200) removed X-API-Key from the request before this
+            // filter(-100) runs, but captured the inbound value in an exchange attribute first.
+            // Only a key the gateway recognises gets its own counter: an unrecognised value is
+            // dropped here so a client cannot mint a fresh bucket per request with a random
+            // header. With allowedApiKeys empty (the default) the dimension is inert.
+            val apiKey =
+                exchange
+                    .getAttribute<String>(TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR)
+                    ?.takeIf { it in config.allowedApiKeys }
 
             try {
                 withTimeout(config.timeoutMs) {
@@ -111,12 +118,37 @@ class SecurityFilter(
                                 }
                             }
 
+                        val apiKeyResult =
+                            async {
+                                if (config.enableRateLimit && apiKey != null) {
+                                    rateLimitService.checkApiKeyRateLimit(
+                                        apiKey = apiKey,
+                                        maxRequests = config.apiKeyMaxRequests,
+                                        windowSeconds = config.windowSeconds,
+                                    )
+                                } else {
+                                    RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                                }
+                            }
+
                         val blacklisted = isBlacklisted.await()
-                        val rateLimit = tighter(rateLimitResult.await(), loginResult.await())
+                        // Every extra dimension can only lower the surviving `remaining`, so
+                        // adding one never loosens an existing limit.
+                        val rateLimit =
+                            tighter(
+                                tighter(rateLimitResult.await(), loginResult.await()),
+                                apiKeyResult.await(),
+                            )
 
                         when {
-                            blacklisted -> blockRequest(exchange, "BLACKLISTED", clientIp, userId)
-                            !rateLimit.allowed -> blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
+                            blacklisted -> {
+                                blockRequest(exchange, "BLACKLISTED", clientIp, userId)
+                            }
+
+                            !rateLimit.allowed -> {
+                                blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
+                            }
+
                             else -> {
                                 addRateLimitHeaders(exchange.response, rateLimit)
                                 chain.filter(exchange).awaitSingleOrNull()
@@ -172,6 +204,7 @@ class SecurityFilter(
                 }
                 chain.filter(exchange).awaitSingleOrNull()
             }
+
             RedisFailureMode.FAIL_CLOSED -> {
                 logger.error(cause) { "Security check $kind — denying request (mode=FAIL_CLOSED): IP: $clientIp" }
                 blockRequest(exchange, "RATE_LIMITED", clientIp, userId)

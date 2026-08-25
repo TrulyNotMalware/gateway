@@ -18,6 +18,19 @@ class RateLimitServiceSpec :
                 }
             }
 
+            `when`("checkApiKeyRateLimit is used") {
+                val svc = RateLimitService(InMemoryModule())
+                repeat(3) { svc.checkApiKeyRateLimit("k-1", maxRequests = 3, windowSeconds = 60) }
+                val over = svc.checkApiKeyRateLimit("k-1", maxRequests = 3, windowSeconds = 60)
+                val otherKey = svc.checkApiKeyRateLimit("k-2", maxRequests = 3, windowSeconds = 60)
+                val sameValueAsIp = svc.checkIpRateLimit("k-1", maxRequests = 3, windowSeconds = 60)
+                then("the key has its own counter, isolated per key and from the IP namespace") {
+                    over.allowed shouldBe false
+                    otherKey.allowed shouldBe true
+                    sameValueAsIp.allowed shouldBe true
+                }
+            }
+
             `when`("the same key is hit beyond its limit") {
                 val svc = RateLimitService(InMemoryModule())
                 repeat(5) { svc.checkIpRateLimit("1.2.3.4", maxRequests = 5, windowSeconds = 60) }

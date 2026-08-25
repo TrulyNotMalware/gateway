@@ -525,4 +525,163 @@ class SecurityFilterSpec :
                 }
             }
         }
+        given("SecurityFilter with the per-API-key dimension configured") {
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = false,
+                            enableRateLimit = true,
+                            // Generous so only the API-key dimension can trip.
+                            ipMaxRequests = 1000,
+                            userMaxRequests = 1000,
+                            endpointMaxRequests = 1000,
+                            windowSeconds = 60,
+                            apiKeyMaxRequests = 2,
+                            allowedApiKeys = listOf("known-key"),
+                        ),
+                )
+
+            fun requestWith(apiKey: String?, ip: String): MockServerWebExchange {
+                val builder = MockServerHttpRequest.get("/v1/posts").remoteAddress(InetSocketAddress(ip, 0))
+                val ex = MockServerWebExchange.from(builder)
+                // Stand in for TrustHeaderStripFilter(-200), which captures the inbound header
+                // into this attribute and then removes it.
+                apiKey?.let { ex.attributes[TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR] = it }
+                return ex
+            }
+
+            `when`("a recognised API key exceeds its own limit") {
+                val blacklist = BlacklistService(InMemoryModule())
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                repeat(2) {
+                    filter
+                        .filter(requestWith("known-key", "1.1.1.1"), GatewayFilterChain { Mono.empty() })
+                        .awaitSingleOrNull()
+                }
+                val ex = requestWith("known-key", "1.1.1.1")
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the third request is blocked with 429 even though every other limit is far away") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+
+            `when`("an unrecognised API key is supplied repeatedly") {
+                val blacklist = BlacklistService(InMemoryModule())
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                // A client rotating random keys must NOT earn a fresh bucket each time; these
+                // requests are simply not counted in the API-key dimension at all.
+                repeat(5) { i ->
+                    filter
+                        .filter(requestWith("random-$i", "2.2.2.2"), GatewayFilterChain { Mono.empty() })
+                        .awaitSingleOrNull()
+                }
+                val ex = requestWith("random-99", "2.2.2.2")
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the request still passes — unknown keys never get a counter") {
+                    passed shouldBe true
+                }
+            }
+
+            `when`("a recognised key is used from a second IP") {
+                val blacklist = BlacklistService(InMemoryModule())
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                repeat(2) {
+                    filter
+                        .filter(requestWith("known-key", "3.3.3.3"), GatewayFilterChain { Mono.empty() })
+                        .awaitSingleOrNull()
+                }
+                val ex = requestWith("known-key", "4.4.4.4")
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the counter follows the key, not the IP, so it is still blocked") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+        }
+
+        given("SecurityFilter with allowedApiKeys left empty (the default)") {
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = false,
+                            enableRateLimit = true,
+                            ipMaxRequests = 1000,
+                            userMaxRequests = 1000,
+                            endpointMaxRequests = 1000,
+                            windowSeconds = 60,
+                            apiKeyMaxRequests = 1,
+                        ),
+                )
+            val filter =
+                SecurityFilter(
+                    BlacklistService(InMemoryModule()),
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                    resolver,
+                )
+
+            fun keyedRequest(apiKey: String): MockServerWebExchange {
+                val request =
+                    MockServerHttpRequest
+                        .get("/v1/posts")
+                        .remoteAddress(InetSocketAddress("6.6.6.6", 0))
+                val exchange = MockServerWebExchange.from(request)
+                exchange.attributes[TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR] = apiKey
+                return exchange
+            }
+
+            `when`("requests arrive carrying an API key") {
+                repeat(3) {
+                    filter
+                        .filter(keyedRequest("any-key"), GatewayFilterChain { Mono.empty() })
+                        .awaitSingleOrNull()
+                }
+                val ex = keyedRequest("any-key")
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("the dimension is inert and nothing is throttled by it") {
+                    passed shouldBe true
+                }
+            }
+        }
     })

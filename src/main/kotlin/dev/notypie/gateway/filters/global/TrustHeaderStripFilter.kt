@@ -16,6 +16,11 @@ import reactor.core.publisher.Mono
  * - Authentication itself (JWT verification → X-User-ID injection) is handled by a separate filter;
  *   this filter only handles *input sanitization*.
  * - Runs *before* SecurityFilter via a very high priority (-200).
+ *
+ * One value is captured before it is discarded: the inbound `X-API-Key` is stashed in the
+ * [CAPTURED_API_KEY_ATTR] exchange attribute so [SecurityFilter] can use it as a rate-limit
+ * dimension. The header itself is still removed, so a client-supplied key never reaches a
+ * backend — the attribute is gateway-internal and cannot be set from outside.
  */
 @Component
 class TrustHeaderStripFilter(
@@ -25,6 +30,12 @@ class TrustHeaderStripFilter(
     override fun getOrder(): Int = -200
 
     override fun filter(exchange: ServerWebExchange, chain: GatewayFilterChain): Mono<Void> {
+        // Capture before any early return: SecurityFilter(-100) needs the inbound key even when
+        // the strip list is empty, and it must read one consistent source in every configuration.
+        exchange.request.headers.getFirst(API_KEY_HEADER)?.let { key ->
+            exchange.attributes[CAPTURED_API_KEY_ATTR] = key
+        }
+
         val toStrip = appConfig.security.strippedTrustHeaders
         if (toStrip.isEmpty()) return chain.filter(exchange)
 
@@ -43,5 +54,12 @@ class TrustHeaderStripFilter(
                         }.build(),
                 ).build()
         return chain.filter(mutated)
+    }
+
+    companion object {
+        const val API_KEY_HEADER = "X-API-Key"
+
+        /** Exchange attribute holding the inbound API key, read by [SecurityFilter]. */
+        const val CAPTURED_API_KEY_ATTR = "dev.notypie.gateway.capturedApiKey"
     }
 }
