@@ -24,8 +24,9 @@ root. Developer tooling only — nothing here is on the build or runtime path, a
   not land on `main`.
 - The committed root `gradle.properties` is the macOS-derived preset (6GB, ZGC, configuration cache
   on). Treat it as the shared default rather than a personal setting.
-- `README.md` still says "Kotlin 2.3.0"; the project is on 2.4.10. The presets themselves are
-  version-independent, but fix the prose if you touch the file.
+- `README.md` carries both the presets' minimum floors and a "Verified with" block naming the
+  stack this repo actually builds against. The floors are about the presets; the verified block
+  must track `build.gradle.kts` and the wrapper — update it when a Dependabot bump lands.
 
 ### Testing Requirements
 No tests. Verify a preset change with `./gradlew --stop && ./gradlew build` and confirm the daemon

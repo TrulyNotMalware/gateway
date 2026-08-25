@@ -2,15 +2,18 @@
 
 ## Features
 
-- **Blacklist Filtering**: Block requests from specific IPs, user IDs, or API keys
+- **Blacklist Filtering**: Block requests from specific IPs or user IDs
+  (`BlacklistType.API_KEY` exists but is not wired into the request path yet)
 - **Redis Integration**: Support for both Redis cluster and standalone configurations
 - **Reactive Programming**: Built with Spring WebFlux and Kotlin Coroutines
 - **Kubernetes Ready**: Includes deployment configurations for Kubernetes
 
 ## Requirements
 
-- JDK 25
-- Kotlin 2.3.0
+- JDK 25 (Eclipse Temurin — the Gradle toolchain pins both version and vendor)
+- Kotlin 2.4.10
+- Spring Boot 4.1.0 / Spring Cloud 2025.1.2
+- Gradle 9.7.0 (use the bundled wrapper)
 - Redis (optional, can run in-memory mode)
 
 ## Configuration
@@ -90,7 +93,7 @@ kubectl apply -f src/main/resources/k8s/networkpolicy.yaml
 ## Security Policy
 
 Defaults live in `AppConfig.Security` (Kotlin) and can be overridden via env
-(`APP_CONFIG_SECURITY_*`) — typically through `k8s/dok/configmap.yaml`.
+(`APP_CONFIG_SECURITY_*`) — typically through `src/main/resources/k8s/configmap.yaml`.
 
 ### RateLimit thresholds
 
@@ -99,18 +102,27 @@ Defaults live in `AppConfig.Security` (Kotlin) and can be overridden via env
 | `ipMaxRequests` | 1000 / 60s | per source IP |
 | `userMaxRequests` | 500 / 60s | per authenticated user |
 | `endpointMaxRequests` | 100 / 60s | per (endpoint, identifier) |
-| `loginMaxRequests` | 10 / 60s | dedicated tight limit for `/v1/auth/login` (pre-auth, IP-keyed) |
+| `loginMaxRequests` | 10 / 60s | dedicated tight limit for the `loginPaths` (`/v1/auth/login`, `/v1/files/auth/login`) — pre-auth, IP-keyed |
+| `apiKeyMaxRequests` | 1000 / 60s | per API key, **only** for keys listed in `allowedApiKeys` (empty by default = dimension off) |
 | `windowSeconds` | 60 | fixed window for all counters (Lua INCRBY + EXPIRE on first hit — a burst can straddle a window boundary and briefly allow up to 2× the limit) |
 
 `RateLimitService.checkMultipleRateLimits` runs IP/user/endpoint checks
 in parallel and applies the **tightest** remaining quota. The endpoint key's
 identifier falls back `userId → ip → "anonymous"`, so anonymous traffic is
 still partitioned by IP (one bot cannot exhaust the quota for other visitors).
-There is no API-key dimension: `X-API-Key` is stripped by `TrustHeaderStripFilter`
-before this filter runs, so it would always be null.
+The login and API-key limits are evaluated alongside it and combined the same
+way, so an extra dimension can only tighten the outcome, never loosen it.
+
+`X-API-Key` is still stripped by `TrustHeaderStripFilter` before the request
+reaches a backend, but the filter captures the inbound value into an exchange
+attribute first so `SecurityFilter` can count it. Only keys listed in
+`allowedApiKeys` are counted — an unrecognised value is ignored rather than
+given a bucket of its own, since a client rotating random keys would otherwise
+mint a fresh counter on every request. With the list empty (the default) the
+dimension is inert.
 
 Tune from real traffic by uncommenting the keys in
-`k8s/dok/configmap.yaml`; no code change required.
+`src/main/resources/k8s/configmap.yaml`; no code change required.
 
 ### Redis failure policy (`redisFailureMode`)
 
