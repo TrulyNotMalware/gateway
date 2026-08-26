@@ -41,10 +41,11 @@ them as a wire format:
   application and entries could only be created by writing Redis keys by hand.
 - `list` is SCAN-backed via `RedisModule.scanKeys` and bounded by `MAX_LIST_LIMIT` (500).
   **Never call it from the request path** — it walks the keyspace.
-- `BlacklistType.API_KEY` is now reachable for *storage* through the admin endpoint, but
-  `isAnyBlacklisted` still checks only `ip` and `userId`, so a blacklisted API key is not enforced
-  on the request path. The validated key is available in `SecurityFilter`; wiring it is a small
-  follow-up.
+- `isAnyBlacklisted(ip, userId, apiKey)` covers all three types. The `apiKey` argument **must**
+  already be allowlist-validated by the caller — `SecurityFilter` passes the value it filtered
+  through `security.allowedApiKeys`, never the raw header, so an arbitrary client string cannot
+  drive Redis lookups. An earlier revision omitted this dimension entirely, which let the admin
+  endpoint store `API_KEY` entries that were silently never enforced.
 
 ### Testing Requirements
 `BlacklistServiceSpec` and `RateLimitServiceSpec` construct the real service over a fresh

@@ -57,7 +57,12 @@ rate-limit bucket that a single client could exhaust for everyone.
 - Login paths (`security.loginPaths`) get a dedicated tight IP-keyed limit (default 10/min) because
   they are pre-auth — the generic 100/min endpoint quota is far too loose for a small fixed
   account set.
-- `handleSecurityCheckFailure` exists because a Redis stall that exceeds `timeoutMs` cancels the
+- **Cancellation is caught and rethrown, not treated as a failure.** The catch order is
+  `TimeoutCancellationException` → `CancellationException` (rethrow) → `Exception`.
+  `CancellationException` extends `Exception`, so without the middle branch a client disconnect
+  would be counted as a security-check failure and — under FAIL_OPEN / HYBRID — still forwarded
+  downstream for a request nobody is waiting for.
+- `verdictOnCheckFailure` exists because a Redis stall that exceeds `timeoutMs` cancels the
   coroutine *before* `ReactiveRedissonClientModule.increment`'s own fallback can run. It re-applies
   the operator's `redisFailureMode`, so `FAIL_CLOSED` does not silently degrade to `FAIL_OPEN` when
   Redis is merely slow. `HYBRID_IN_MEMORY` allows on timeout — the local counter was never reached.

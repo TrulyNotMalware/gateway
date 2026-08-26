@@ -39,6 +39,16 @@ Keep the default off. The management port has no authentication.
   reads use `@Selector`. A `@DeleteOperation` cannot take a body.
 - An unknown blacklist type returns a body listing the supported values rather than throwing —
   an operator typo should not read as a server fault.
+- The `{value}` selector uses `Match.ALL_REMAINING` and rejoins the segments with `/`. A base64
+  API key can legitimately contain a slash; with the default single-segment selector such an
+  entry could be created by POST but never read back or deleted.
+- **Everything caller-supplied is sanitised before it reaches the AUDIT log** (`forLog`: control
+  characters replaced, length bounded). The log is line-oriented and parsed downstream, so a
+  newline in a submitted value would otherwise forge whole audit records — and this port has no
+  caller authentication, so "the caller is trusted" is not available as an argument.
+- `value` and `reason` are length-capped (`MAX_VALUE_LENGTH`, `MAX_REASON_LENGTH`) before any
+  write, so an unauthenticated caller cannot drive log or Redis growth with oversized fields.
+- A failed scan surfaces as an `error` field, never as `count: 0` — see `listingFor`.
 - Every mutation writes a `decision=BLACKLIST_ADD` / `BLACKLIST_REMOVE` line to the `AUDIT`
   logger. Preserve that: it is the only record of who changed the blocklist.
 

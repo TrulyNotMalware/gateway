@@ -60,6 +60,19 @@ every master on a cluster) with a `take(limit)` bound. Never call it from the re
 walks the keyspace. `InMemoryModule` implements it with a small `*`/`?` glob translation and drops
 entries whose TTL has already passed.
 
+**`runCatching` must never swallow cancellation.** Every call site funnels through
+`Result.rethrowCancellation()` before its failure branch. `runCatching` catches `Throwable`, so
+without it a cancelled Redis await — `SecurityFilter`'s `withTimeout` firing, or the client
+disconnecting — would be misread as a Redis outage: the in-memory fallback would be incremented,
+a failure metric emitted, and the coroutine would keep running past its cancellation. Cancellation
+is not a Redis failure. Any new `runCatching` here needs the same guard.
+
+**`scanKeys` propagates its failure** rather than degrading to an empty list, joining `exists` as
+the second deliberate exception to the quiet-degradation rule. `count: 0` for a Redis outage is
+indistinguishable from a genuinely empty blacklist, and an operator would read "nothing is
+blocked" when the truth is "we cannot tell". `BlacklistEndpoint` catches it and reports an error
+field.
+
 **Redis failures are counted, not just logged.** `increment`, `remainingTtl` and `scanKeys` bump
 `gateway.redis.operation.failures{operation,failureMode}` on the fallback path. This matters most
 under `HYBRID_IN_MEMORY`, which absorbs an outage silently — the request still succeeds, so

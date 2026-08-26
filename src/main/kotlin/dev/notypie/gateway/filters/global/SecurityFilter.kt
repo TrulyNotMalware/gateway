@@ -8,6 +8,7 @@ import dev.notypie.gateway.service.RateLimitConfig
 import dev.notypie.gateway.service.RateLimitResult
 import dev.notypie.gateway.service.RateLimitService
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -103,6 +104,13 @@ class SecurityFilter(
                 } catch (e: TimeoutCancellationException) {
                     metrics.stopCheckTimer(sample, "timeout")
                     verdictOnCheckFailure(clientIp, "timeout", e)
+                } catch (e: CancellationException) {
+                    // Not our timeout — the client disconnected or an outer scope was cancelled.
+                    // CancellationException extends Exception, so without this it would fall into
+                    // the branch below, be counted as a security-check failure, and (under
+                    // FAIL_OPEN / HYBRID) reach chain.filter for a request nobody is waiting for.
+                    metrics.stopCheckTimer(sample, "cancelled")
+                    throw e
                 } catch (e: Exception) {
                     metrics.stopCheckTimer(sample, "exception")
                     verdictOnCheckFailure(clientIp, "exception", e)
@@ -134,7 +142,9 @@ class SecurityFilter(
             val isBlacklisted =
                 async {
                     if (config.enableBlacklist) {
-                        blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId)
+                        // apiKey is the allowlist-validated value, so a blacklisted key is
+                        // enforced here rather than only being storable via the admin endpoint.
+                        blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId, apiKey = apiKey)
                     } else {
                         false
                     }

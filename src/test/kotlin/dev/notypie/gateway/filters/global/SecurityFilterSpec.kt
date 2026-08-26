@@ -802,4 +802,151 @@ class SecurityFilterSpec :
                 }
             }
         }
+        given("a blacklisted API key") {
+            // Regression: the admin endpoint can store API_KEY entries, but isAnyBlacklisted
+            // only looked at IP and user, so such an entry was silently unenforced.
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = true,
+                            enableRateLimit = false,
+                            allowedApiKeys = listOf("known-key"),
+                        ),
+                )
+            val blacklist = BlacklistService(InMemoryModule())
+            val filter =
+                SecurityFilter(
+                    blacklist,
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                    resolver,
+                    metrics,
+                )
+
+            fun request(apiKey: String?): MockServerWebExchange {
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("20.20.20.20", 0)),
+                    )
+                apiKey?.let { ex.attributes[TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR] = it }
+                return ex
+            }
+
+            `when`("a request presents the blacklisted key") {
+                blacklist.addApiKeyToBlacklist("known-key", "leaked")
+                val ex = request("known-key")
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("it is blocked, not merely throttled") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.FORBIDDEN
+                }
+            }
+
+            `when`("a request presents no API key from the same IP") {
+                val ex = request(null)
+                var passed = false
+                filter
+                    .filter(
+                        ex,
+                        GatewayFilterChain {
+                            passed = true
+                            Mono.empty()
+                        },
+                    ).awaitSingleOrNull()
+                then("it passes — the block follows the key, not the IP") {
+                    passed shouldBe true
+                }
+            }
+        }
+
+        given("a client that cancels while the security check is running") {
+            // Regression: CancellationException extends Exception, so the generic catch used to
+            // swallow client cancellation, count it as a check failure, and still forward
+            // downstream under FAIL_OPEN / HYBRID.
+            val stalling =
+                object : RedisModule {
+                    override suspend fun set(key: String, value: String, ttlSeconds: Long?) = true
+
+                    override suspend fun get(key: String): String? = null
+
+                    override suspend fun exists(key: String): Boolean {
+                        delay(10_000)
+                        return false
+                    }
+
+                    override suspend fun delete(key: String) = true
+
+                    override suspend fun increment(key: String, count: Long, ttlSeconds: Long) = 1L
+
+                    override suspend fun remainingTtl(key: String): Long = -1
+
+                    override suspend fun scanKeys(pattern: String, limit: Int): List<String> = emptyList()
+                }
+            val registry = SimpleMeterRegistry()
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 30_000,
+                            enableBlacklist = true,
+                            enableRateLimit = false,
+                            redisFailureMode = RedisFailureMode.FAIL_OPEN,
+                        ),
+                )
+            val filter =
+                SecurityFilter(
+                    BlacklistService(stalling),
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                    resolver,
+                    SecurityMetrics(registry),
+                )
+
+            `when`("the subscription is cancelled before the check completes") {
+                var passed = false
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("21.21.21.21", 0)),
+                    )
+                val disposable =
+                    filter
+                        .filter(
+                            ex,
+                            GatewayFilterChain {
+                                passed = true
+                                Mono.empty()
+                            },
+                        ).subscribe()
+                delay(200)
+                disposable.dispose()
+                delay(200)
+
+                then("the downstream is never invoked for an abandoned request") {
+                    passed shouldBe false
+                }
+
+                then("cancellation is not recorded as a security-check failure") {
+                    registry
+                        .find(SecurityMetrics.CHECK_FAILURES)
+                        .counters()
+                        .sumOf { it.count() } shouldBe 0.0
+                }
+            }
+        }
     })
