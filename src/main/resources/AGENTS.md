@@ -50,6 +50,9 @@ NetworkPolicy together, or neither. Narrowing to the real pod CIDR is preferred.
   upload route). Raising one without the others produces a breaker trip instead of a slow success.
 - `prod` deliberately omits the `gateway` actuator endpoint — a full route dump is recon surface
   with no consumer. `health.show-details` is `never` in prod, `always` in local.
+- `blacklist` is in the prod exposure list but the endpoint only registers when
+  `app.config.blacklist.admin-enabled=true` (wired to `APP_CONFIG_BLACKLIST_ADMIN_ENABLED`, default
+  false). Exposure alone does not publish a write endpoint — both gates must be open.
 - `forward-headers-strategy: none` in both profiles: `XForwardedRemoteAddressResolver` handles XFF,
   and letting the framework also parse it would double-process the header.
 - `${...}` placeholders (`PRJ_BE_URI`, `PRJ_DOK_ORIGINS`, `PROD_HTTP_CLIENT_*`) are supplied by

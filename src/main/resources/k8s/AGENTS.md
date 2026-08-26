@@ -54,7 +54,10 @@ that only the ConfigMap matters.
 
 ### Ports
 8080 is the app port and 8081 is the management port; they are separated so actuator is never
-reachable from public traffic. The container runs non-root, hence 1024+ ports with the Service
+reachable from public traffic. **8081 now carries a write endpoint** when
+`APP_CONFIG_BLACKLIST_ADMIN_ENABLED=true`: anything in the `monitoring` namespace could then
+blacklist an arbitrary IP, since the management port is unauthenticated. Enable it only where the
+CNI actually enforces NetworkPolicy — on a cluster where it is a no-op, 8081 is open to everything. The container runs non-root, hence 1024+ ports with the Service
 mapping 80 → 8080.
 
 ### Testing Requirements

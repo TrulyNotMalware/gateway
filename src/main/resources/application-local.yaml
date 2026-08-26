@@ -44,7 +44,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,gateway,metrics,env,configprops
+        include: health,info,prometheus,gateway,metrics,env,configprops,blacklist
       base-path: /actuator
   endpoint:
     health:
@@ -77,3 +77,7 @@ app:
       enable-blacklist: false
       enable-rate-limit: false
       timeout-ms: 1000
+    blacklist:
+      # Local only: lets you exercise /actuator/blacklist without a cluster. In prod this is
+      # gated behind the NetworkPolicy on the management port — see application-prod.yaml.
+      admin-enabled: true

@@ -176,7 +176,9 @@ management:
     web:
       exposure:
         # `gateway` (route dump) omitted: it exposes the full route table = recon surface with no consumer.
-        include: health,info,prometheus,metrics
+        # `blacklist` is a write endpoint; exposing it here is not enough on its own — it only
+        # registers when app.config.blacklist.admin-enabled=true (default false).
+        include: health,info,prometheus,metrics,blacklist
       base-path: /actuator
   endpoint:
     health:
@@ -263,3 +265,9 @@ app:
       gateway-shared-secret: ${APP_CONFIG_SECURITY_GATEWAY_SHARED_SECRET:}
     blacklist:
       storage-mode: redis
+      # The management port has no authentication — its only protection is k8s/networkpolicy.yaml
+      # admitting :8081 from the monitoring namespace, and that is only enforced if the CNI
+      # supports NetworkPolicy. Anything in that namespace can blacklist an arbitrary IP once
+      # this is on, so it stays opt-in per environment.
+      # Env: APP_CONFIG_BLACKLIST_ADMIN_ENABLED.
+      admin-enabled: ${APP_CONFIG_BLACKLIST_ADMIN_ENABLED:false}

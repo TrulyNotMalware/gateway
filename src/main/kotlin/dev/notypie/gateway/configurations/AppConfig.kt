@@ -111,6 +111,15 @@ data class AppConfig(
 
     data class Blacklist(
         val storageMode: StorageMode = StorageMode.IN_MEMORY,
+        // Publishes the blacklist admin endpoint on the management port. Off by default: that
+        // port has no authentication, so its only protection is k8s/networkpolicy.yaml
+        // restricting :8081 to the monitoring namespace. Enable only where the CNI actually
+        // enforces NetworkPolicy. Also requires `blacklist` in
+        // management.endpoints.web.exposure.include.
+        // Env: APP_CONFIG_BLACKLIST_ADMIN_ENABLED.
+        val adminEnabled: Boolean = false,
+        // Cap on entries returned per type by the admin listing (SCAN-bounded).
+        val adminListLimit: Int = 100,
     )
 
     data class Redis(

@@ -41,8 +41,17 @@ bean (`XForwardedRemoteAddressResolver.maxTrustedIndex(trustedProxyHops)`), whic
 rate-limit bucket that a single client could exhaust for everyone.
 
 ### SecurityFilter specifics
-- The blacklist check, the multi-dimension rate-limit check, and the login-specific rate-limit
-  check run concurrently inside `coroutineScope` under a single `withTimeout(security.timeoutMs)`.
+- **Deciding and acting are separate, and that separation is load-bearing.** `runChecks` returns a
+  `Verdict` (`Allow`/`Block`) and is the only thing inside `withTimeout(security.timeoutMs)`;
+  `chain.filter(...)` and `blockRequest(...)` run *after* the timeout scope. An earlier version had
+  `chain.filter` inside the timeout, so any downstream slower than the budget (default 1000ms) was
+  reported as a Redis timeout and then forwarded a **second** time by the failure handler — a
+  duplicate request for every slow call, including non-idempotent logins and the 300s upload route.
+  Never move the chain call back inside. `SecurityFilterSpec` has a regression case asserting
+  exactly one downstream invocation.
+- The blacklist check and the rate-limit dimensions run concurrently inside `coroutineScope`; the
+  scope performs no response I/O, so cancelling it can only lose the decision, never leave a
+  half-written response.
 - `tighter(a, b)` combines two `RateLimitResult`s: **check `allowed` first**, then compare
   `remaining`. A denied result must win even when both have `remaining == 0`.
 - Login paths (`security.loginPaths`) get a dedicated tight IP-keyed limit (default 10/min) because
@@ -54,6 +63,10 @@ rate-limit bucket that a single client could exhaust for everyone.
   Redis is merely slow. `HYBRID_IN_MEMORY` allows on timeout — the local counter was never reached.
 - Block decisions go to the `"AUDIT"` named logger as
   `decision=BLOCK reason=… ip=… userId=… path=… requestId=…`. Keep that shape; it is parsed downstream.
+- `blockRequest` also increments `gateway.security.blocks{reason}`. The tag value and the audit
+  `reason=` field are the same string on purpose — keep them in sync (see `../../metrics/AGENTS.md`).
+- The check duration timer stops **before** the chain call, so `gateway.security.check.duration`
+  measures the check alone.
 - `X-API-Key` is still stripped at `-200`, but `TrustHeaderStripFilter` now captures the inbound
   value into the `CAPTURED_API_KEY_ATTR` exchange attribute first, and `SecurityFilter` reads it
   from there. The attribute is gateway-internal, so a client cannot set it; the header itself

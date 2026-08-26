@@ -58,6 +58,8 @@ CI does **not** run tests on `main` — `simple_test_action.yaml` and `lint.yaml
 CI, so run `./gradlew build` locally before pushing there.
 
 ### Common Patterns
+- Operator tooling goes on the management port (8081) as an actuator `@Endpoint`, never as a
+  `@RestController` — a controller would be published on the public port.
 - Kotlin coroutines bridged into Reactor via `mono { }` / `awaitSingleOrNull()` — the codebase
   prefers `suspend` functions internally and converts at the Spring boundary.
 - Configuration is a single `@ConfigurationProperties("app.config")` tree (`AppConfig`), bound

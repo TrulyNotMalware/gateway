@@ -59,6 +59,12 @@ cluster DNS. Unknown issuer → `Mono.empty()` → 401 with no fallback.
 
 `MIN_GATEWAY_SHARED_SECRET_LEN = 32` mirrors `blog_be`'s own check — change both or neither.
 
+### Blacklist admin toggle (`blacklist.admin-enabled`)
+Registers `../endpoints/BlacklistEndpoint` on the management port. Default **false**, and
+deliberately so: port 8081 has no authentication, and its only protection is the NetworkPolicy
+admitting it from the `monitoring` namespace. `blacklist.admin-list-limit` caps the SCAN-backed
+listing.
+
 ### Per-API-key rate limiting (`api-key-max-requests` + `allowed-api-keys`)
 The limit applies only to keys listed in `allowed-api-keys`; an unrecognised `X-API-Key` is
 ignored. That allowlist is the whole point — a counter keyed on an unvalidated client header is

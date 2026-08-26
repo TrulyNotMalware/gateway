@@ -2,6 +2,7 @@ package dev.notypie.gateway.filters.global
 
 import dev.notypie.gateway.configurations.AppConfig
 import dev.notypie.gateway.configurations.RedisFailureMode
+import dev.notypie.gateway.metrics.SecurityMetrics
 import dev.notypie.gateway.modules.redis.InMemoryModule
 import dev.notypie.gateway.modules.redis.RedisModule
 import dev.notypie.gateway.service.BlacklistService
@@ -10,8 +11,10 @@ import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.reactor.awaitSingleOrNull
+import kotlinx.coroutines.reactor.mono
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.support.ipresolver.XForwardedRemoteAddressResolver
 import org.springframework.http.HttpStatus
@@ -20,12 +23,14 @@ import org.springframework.mock.web.server.MockServerWebExchange
 import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicInteger
 
 class SecurityFilterSpec :
     BehaviorSpec({
 
         val jsonMapper: JsonMapper = JsonMapper.builder().build()
         val resolver = XForwardedRemoteAddressResolver.maxTrustedIndex(1)
+        val metrics = SecurityMetrics(SimpleMeterRegistry())
 
         given("SecurityFilter with Blacklist=on, RateLimit=on") {
             val cfg =
@@ -43,7 +48,7 @@ class SecurityFilterSpec :
                 )
             val blacklist = BlacklistService(InMemoryModule())
             val rateLimit = RateLimitService(InMemoryModule())
-            val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+            val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver, metrics)
 
             `when`("a single normal request arrives") {
                 val ex =
@@ -138,7 +143,8 @@ class SecurityFilterSpec :
             `when`("a blacklisted real client hides behind a spoofed leftmost XFF entry") {
                 val blacklist = BlacklistService(InMemoryModule())
                 blacklist.addIpToBlacklist("1.1.1.1")
-                val filter = SecurityFilter(blacklist, RateLimitService(InMemoryModule()), cfg, jsonMapper, resolver)
+                val filter =
+                    SecurityFilter(blacklist, RateLimitService(InMemoryModule()), cfg, jsonMapper, resolver, metrics)
 
                 val ex =
                     MockServerWebExchange.from(
@@ -170,6 +176,7 @@ class SecurityFilterSpec :
                         cfg,
                         jsonMapper,
                         resolver,
+                        metrics,
                     )
 
                 val ex =
@@ -214,7 +221,8 @@ class SecurityFilterSpec :
 
             `when`("the 11th login attempt within the window arrives from the same IP") {
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
+                val filter =
+                    SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver, metrics)
 
                 fun loginRequest() =
                     MockServerWebExchange.from(
@@ -243,7 +251,8 @@ class SecurityFilterSpec :
 
             `when`("a non-login path is hit many times from the same IP") {
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
+                val filter =
+                    SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver, metrics)
 
                 fun postsRequest() =
                     MockServerWebExchange.from(
@@ -291,6 +300,8 @@ class SecurityFilterSpec :
                 }
 
                 override suspend fun remainingTtl(key: String): Long = -1L
+
+                override suspend fun scanKeys(pattern: String, limit: Int): List<String> = emptyList()
             }
 
             fun filterFor(mode: RedisFailureMode): SecurityFilter {
@@ -310,6 +321,7 @@ class SecurityFilterSpec :
                     cfg,
                     jsonMapper,
                     resolver,
+                    metrics,
                 )
             }
 
@@ -398,6 +410,8 @@ class SecurityFilterSpec :
                 override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long = 0L
 
                 override suspend fun remainingTtl(key: String): Long = -1L
+
+                override suspend fun scanKeys(pattern: String, limit: Int): List<String> = emptyList()
             }
 
             fun filterFor(mode: RedisFailureMode): SecurityFilter {
@@ -417,6 +431,7 @@ class SecurityFilterSpec :
                     cfg,
                     jsonMapper,
                     resolver,
+                    metrics,
                 )
             }
 
@@ -480,6 +495,7 @@ class SecurityFilterSpec :
                     cfg,
                     jsonMapper,
                     resolver,
+                    metrics,
                 )
 
             `when`("any request arrives") {
@@ -555,7 +571,7 @@ class SecurityFilterSpec :
             `when`("a recognised API key exceeds its own limit") {
                 val blacklist = BlacklistService(InMemoryModule())
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver, metrics)
                 repeat(2) {
                     filter
                         .filter(requestWith("known-key", "1.1.1.1"), GatewayFilterChain { Mono.empty() })
@@ -580,7 +596,7 @@ class SecurityFilterSpec :
             `when`("an unrecognised API key is supplied repeatedly") {
                 val blacklist = BlacklistService(InMemoryModule())
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver, metrics)
                 // A client rotating random keys must NOT earn a fresh bucket each time; these
                 // requests are simply not counted in the API-key dimension at all.
                 repeat(5) { i ->
@@ -606,7 +622,7 @@ class SecurityFilterSpec :
             `when`("a recognised key is used from a second IP") {
                 val blacklist = BlacklistService(InMemoryModule())
                 val rateLimit = RateLimitService(InMemoryModule())
-                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver)
+                val filter = SecurityFilter(blacklist, rateLimit, cfg, jsonMapper, resolver, metrics)
                 repeat(2) {
                     filter
                         .filter(requestWith("known-key", "3.3.3.3"), GatewayFilterChain { Mono.empty() })
@@ -651,6 +667,7 @@ class SecurityFilterSpec :
                     cfg,
                     jsonMapper,
                     resolver,
+                    metrics,
                 )
 
             fun keyedRequest(apiKey: String): MockServerWebExchange {
@@ -681,6 +698,107 @@ class SecurityFilterSpec :
                     ).awaitSingleOrNull()
                 then("the dimension is inert and nothing is throttled by it") {
                     passed shouldBe true
+                }
+            }
+        }
+        given("a healthy Redis but a downstream slower than security.timeoutMs") {
+            // Regression: chain.filter used to run *inside* withTimeout(timeoutMs), so any
+            // downstream slower than the budget was reported as a Redis timeout and then
+            // forwarded a SECOND time by the failure handler. Non-idempotent traffic (login
+            // POSTs, uploads) was therefore executed twice on the backend, and the
+            // FILE-UPLOAD route — response-timeout 300s — could never complete normally.
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 200,
+                            enableBlacklist = true,
+                            enableRateLimit = true,
+                        ),
+                )
+            val filter =
+                SecurityFilter(
+                    BlacklistService(InMemoryModule()),
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                    resolver,
+                    metrics,
+                )
+
+            `when`("the downstream takes 3x the security timeout") {
+                val invocations = AtomicInteger(0)
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/files/upload/x")
+                            .remoteAddress(InetSocketAddress("7.7.7.7", 0)),
+                    )
+                val chain =
+                    GatewayFilterChain {
+                        mono {
+                            invocations.incrementAndGet()
+                            delay(600)
+                            null
+                        }.then()
+                    }
+                filter.filter(ex, chain).awaitSingleOrNull()
+
+                then("the downstream is invoked exactly once") {
+                    invocations.get() shouldBe 1
+                }
+
+                then("the request is not blocked — the security check itself never timed out") {
+                    ex.response.statusCode shouldNotBe HttpStatus.TOO_MANY_REQUESTS
+                    ex.response.statusCode shouldNotBe HttpStatus.FORBIDDEN
+                }
+            }
+        }
+
+        given("SecurityFilter recording metrics") {
+            val registry = SimpleMeterRegistry()
+            val localMetrics = SecurityMetrics(registry)
+            val cfg =
+                AppConfig(
+                    security =
+                        AppConfig.Security(
+                            timeoutMs = 2000,
+                            enableBlacklist = true,
+                            enableRateLimit = false,
+                        ),
+                )
+            val blacklist = BlacklistService(InMemoryModule())
+            val filter =
+                SecurityFilter(
+                    blacklist,
+                    RateLimitService(InMemoryModule()),
+                    cfg,
+                    jsonMapper,
+                    resolver,
+                    localMetrics,
+                )
+
+            `when`("a blacklisted request is refused") {
+                blacklist.addIpToBlacklist("11.11.11.11")
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("11.11.11.11", 0)),
+                    )
+                filter.filter(ex, GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+
+                then("a block counter is emitted with the audit reason as its tag") {
+                    registry
+                        .counter(SecurityMetrics.BLOCKS, "reason", "BLACKLISTED")
+                        .count() shouldBe 1.0
+                }
+
+                then("the check duration is timed") {
+                    registry
+                        .find(SecurityMetrics.CHECK_DURATION)
+                        .timers()
+                        .sumOf { it.count() } shouldBe 1L
                 }
             }
         }

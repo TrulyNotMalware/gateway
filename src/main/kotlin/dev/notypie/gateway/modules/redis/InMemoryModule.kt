@@ -109,4 +109,28 @@ class InMemoryModule :
     override suspend fun exists(key: String): Boolean = resolve(key) != null
 
     override suspend fun delete(key: String): Boolean = cache.remove(key) != null
+
+    override suspend fun scanKeys(pattern: String, limit: Int): List<String> {
+        val regex = globToRegex(pattern)
+        return cache.keys
+            .asSequence()
+            .filter { regex.matches(it) }
+            // resolve() drops (and evicts) entries whose TTL has passed, so an expired
+            // blacklist entry never shows up in the admin listing.
+            .filter { resolve(it) != null }
+            .take(limit)
+            .toList()
+    }
+
+    /** Supports the Redis glob subset the callers actually use: `*` and `?`. */
+    private fun globToRegex(pattern: String): Regex =
+        pattern
+            .map { ch ->
+                when (ch) {
+                    '*' -> ".*"
+                    '?' -> "."
+                    else -> Regex.escape(ch.toString())
+                }
+            }.joinToString(separator = "", prefix = "^", postfix = "$")
+            .toRegex()
 }

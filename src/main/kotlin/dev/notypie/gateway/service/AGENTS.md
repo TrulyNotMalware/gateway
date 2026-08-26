@@ -36,10 +36,15 @@ them as a wire format:
   With no checks queued it returns `false`.
 - `checkRateLimit` increments **then** reads TTL — two round trips. Every counter dimension costs
   two Redis calls per request; adding a dimension is not free.
-- `addApiKeyToBlacklist` / `BlacklistType.API_KEY` still have no live caller. The *rate-limit*
-  dimension is wired (`checkApiKeyRateLimit`, fed by `TrustHeaderStripFilter`'s captured attribute),
-  but the blacklist side is not — `isAnyBlacklisted` takes only `ip` and `userId`. Wiring it is a
-  natural follow-up; the validated key is already available in `SecurityFilter`.
+- The blacklist finally has a write path: `../endpoints/BlacklistEndpoint` calls `add`, `remove`
+  and `list` on the management port. Before that, the `add*` methods had no caller anywhere in the
+  application and entries could only be created by writing Redis keys by hand.
+- `list` is SCAN-backed via `RedisModule.scanKeys` and bounded by `MAX_LIST_LIMIT` (500).
+  **Never call it from the request path** — it walks the keyspace.
+- `BlacklistType.API_KEY` is now reachable for *storage* through the admin endpoint, but
+  `isAnyBlacklisted` still checks only `ip` and `userId`, so a blacklisted API key is not enforced
+  on the request path. The validated key is available in `SecurityFilter`; wiring it is a small
+  follow-up.
 
 ### Testing Requirements
 `BlacklistServiceSpec` and `RateLimitServiceSpec` construct the real service over a fresh

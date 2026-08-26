@@ -2,6 +2,7 @@ package dev.notypie.gateway.modules.redis
 
 import dev.notypie.gateway.configurations.RedisFailureMode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.awaitSingle
 import org.redisson.api.RScript
@@ -15,6 +16,8 @@ class ReactiveRedissonClientModule(
     val client: RedissonReactiveClient,
     private val redisFailureMode: RedisFailureMode = RedisFailureMode.FAIL_OPEN,
     private val inMemoryFallback: InMemoryRateLimitFallback? = null,
+    // Optional so the class stays constructible in tests without a registry.
+    private val meterRegistry: MeterRegistry? = null,
 ) : RedisModule {
     init {
         // Configuration error rather than a runtime NPE — surface it at boot so a misconfigured
@@ -85,6 +88,9 @@ class ReactiveRedissonClientModule(
         }.onFailure { ex ->
             logger.error { "Failed to increment key=$key count=$count, exception=${ex.message}" }
         }.getOrElse {
+            // Without this counter a degraded Redis is invisible: HYBRID silently absorbs the
+            // failure and the request still succeeds, so nothing else signals the outage.
+            countRedisFailure("increment")
             when (redisFailureMode) {
                 RedisFailureMode.FAIL_OPEN -> 0L
                 RedisFailureMode.FAIL_CLOSED -> Long.MAX_VALUE
@@ -99,6 +105,7 @@ class ReactiveRedissonClientModule(
         }.onFailure { ex ->
             logger.error { "Failed to get remaining TTL key=$key, exception=${ex.message}" }
         }.getOrElse {
+            countRedisFailure("remainingTtl")
             // FAIL_OPEN / FAIL_CLOSED both surface -2 (key missing) so the response header
             // shows "no info" rather than a fabricated TTL — only HYBRID has real per-pod
             // window state to read from.
@@ -107,4 +114,30 @@ class ReactiveRedissonClientModule(
                 RedisFailureMode.HYBRID_IN_MEMORY -> inMemoryFallback!!.remainingTtl(key)
             }
         }
+
+    // SCAN-based (Redisson iterates every master on a cluster); never KEYS. Admin path only —
+    // the request path must not scan. `take` bounds the walk so a large keyspace cannot stall
+    // the caller.
+    override suspend fun scanKeys(pattern: String, limit: Int): List<String> =
+        runCatching {
+            client.keys
+                .getKeysByPattern(pattern)
+                .take(limit.toLong())
+                .collectList()
+                .awaitSingle()
+        }.onFailure { ex ->
+            countRedisFailure("scanKeys")
+            logger.error { "Failed to scan keys pattern=$pattern, exception=${ex.message}" }
+        }.getOrElse { emptyList() }
+
+    private fun countRedisFailure(operation: String) {
+        meterRegistry
+            ?.counter(
+                "gateway.redis.operation.failures",
+                "operation",
+                operation,
+                "failureMode",
+                redisFailureMode.name,
+            )?.increment()
+    }
 }

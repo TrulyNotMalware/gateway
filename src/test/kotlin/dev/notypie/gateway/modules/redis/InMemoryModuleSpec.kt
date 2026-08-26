@@ -69,5 +69,31 @@ class InMemoryModuleSpec :
                     mod.remainingTtl("expiring") shouldBe -2L
                 }
             }
+
+            `when`("keys are scanned by glob pattern") {
+                val mod = InMemoryModule()
+                mod.set("blacklist:ip:1.1.1.1", "a")
+                mod.set("blacklist:ip:2.2.2.2", "b")
+                mod.set("blacklist:user:alice", "c")
+                then("only keys matching the prefix are returned") {
+                    mod.scanKeys("blacklist:ip:*", 100).sorted() shouldBe
+                        listOf("blacklist:ip:1.1.1.1", "blacklist:ip:2.2.2.2")
+                }
+                then("the limit bounds the result") {
+                    mod.scanKeys("blacklist:*", 2).size shouldBe 2
+                }
+                then("a pattern matching nothing yields an empty list") {
+                    mod.scanKeys("nope:*", 100) shouldBe emptyList()
+                }
+            }
+
+            `when`("an entry has already expired") {
+                val mod = InMemoryModule()
+                mod.set("blacklist:ip:9.9.9.9", "gone", ttlSeconds = 1)
+                delay(1100)
+                then("the scan does not report it") {
+                    mod.scanKeys("blacklist:ip:*", 100) shouldBe emptyList()
+                }
+            }
         }
     })

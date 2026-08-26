@@ -30,6 +30,11 @@ data:
   APP_CONFIG_REDIS_MODE: "cluster"
   APP_CONFIG_REDIS_CLUSTER_NODES_0: "redis://redis-cluster.infra.svc.cluster.local:6379"
   APP_CONFIG_BLACKLIST_STORAGE_MODE: "redis"
+  # Blacklist admin endpoint on the management port (/actuator/blacklist). Off by default:
+  # :8081 is unauthenticated and only shielded by the NetworkPolicy, so anything in the
+  # monitoring namespace could blacklist an arbitrary IP. Turn on only where the CNI enforces
+  # NetworkPolicy, and prefer TTL-bearing entries so a mistake ages out.
+  # APP_CONFIG_BLACKLIST_ADMIN_ENABLED: "true"
 
   # JWT verification — multi-issuer RS256 via JWKS. Each backend signs its own tokens
   # and exposes /.well-known/jwks.json; the gateway routes verification by the `iss` claim.

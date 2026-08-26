@@ -30,6 +30,8 @@ by hand in `configurations/RedisConfiguration.kt`. Do not "simplify" this by rem
 | `service/` | `BlacklistService`, `RateLimitService` (see `service/AGENTS.md`) |
 | `modules/` | Storage abstraction over Redis / in-memory (see `modules/AGENTS.md`) |
 | `controllers/` | Circuit-breaker fallback endpoints (see `controllers/AGENTS.md`) |
+| `endpoints/` | Actuator endpoints on the management port — blacklist admin (see `endpoints/AGENTS.md`) |
+| `metrics/` | Micrometer instrumentation for the security path (see `metrics/AGENTS.md`) |
 
 ## For AI Agents
 

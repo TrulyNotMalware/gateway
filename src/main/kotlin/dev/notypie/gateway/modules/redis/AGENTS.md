@@ -12,7 +12,7 @@ registered is decided entirely by `@Conditional` in `../../configurations/RedisC
 
 | File | Description |
 |------|-------------|
-| `RedisModule.kt` | The interface: `set`, `get`, `exists`, `delete`, `increment`, `remainingTtl` — all `suspend` |
+| `RedisModule.kt` | The interface: `set`, `get`, `exists`, `delete`, `increment`, `remainingTtl`, `scanKeys` — all `suspend` |
 | `ReactiveRedissonClientModule.kt` | Production implementation over `RedissonReactiveClient` |
 | `InMemoryModule.kt` | Full `RedisModule` over `ConcurrentHashMap`; used when `redis.mode=NONE` or `blacklist.storage-mode=IN_MEMORY`. Also the standard test double |
 | `InMemoryRateLimitFallback.kt` | *Not* a `RedisModule` — only `increment` + `remainingTtl`, used by `HYBRID_IN_MEMORY` when a live Redis call throws |
@@ -54,6 +54,18 @@ one counter — matching the Lua script's "EXPIRE only on first INCR" semantics.
 
 **The `HYBRID_IN_MEMORY` + null-fallback combination is rejected in the constructor** via `require`,
 so a misconfigured deployment fails in the startup log rather than on the first Redis hiccup.
+
+**`scanKeys` is admin-only.** It backs the blacklist listing and is SCAN-based (Redisson iterates
+every master on a cluster) with a `take(limit)` bound. Never call it from the request path — it
+walks the keyspace. `InMemoryModule` implements it with a small `*`/`?` glob translation and drops
+entries whose TTL has already passed.
+
+**Redis failures are counted, not just logged.** `increment`, `remainingTtl` and `scanKeys` bump
+`gateway.redis.operation.failures{operation,failureMode}` on the fallback path. This matters most
+under `HYBRID_IN_MEMORY`, which absorbs an outage silently — the request still succeeds, so
+without the counter nothing signals that the cluster-wide counters have stopped working. The
+`MeterRegistry` is a nullable constructor argument because this class is built by hand in
+`RedisConfiguration` rather than component-scanned.
 
 **Both in-memory classes are `CoroutineScope` + `DisposableBean`** with a `@PostConstruct` cleanup
 loop every 5 minutes and `job.cancel()` + `clear()` on destroy. A new map-backed class here needs

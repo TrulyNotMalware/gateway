@@ -5,6 +5,7 @@ import dev.notypie.gateway.modules.redis.InMemoryModule
 import dev.notypie.gateway.modules.redis.InMemoryRateLimitFallback
 import dev.notypie.gateway.modules.redis.ReactiveRedissonClientModule
 import dev.notypie.gateway.modules.redis.RedisModule
+import io.micrometer.core.instrument.MeterRegistry
 import org.redisson.Redisson
 import org.redisson.api.RedissonClient
 import org.redisson.api.RedissonReactiveClient
@@ -78,11 +79,13 @@ class RedisClusterConfiguration(
     fun redisModule(
         redissonClusterReactiveClient: RedissonReactiveClient,
         inMemoryRateLimitFallback: InMemoryRateLimitFallback,
+        meterRegistry: MeterRegistry,
     ): RedisModule =
         ReactiveRedissonClientModule(
             client = redissonClusterReactiveClient,
             redisFailureMode = appConfig.security.redisFailureMode,
             inMemoryFallback = inMemoryRateLimitFallback,
+            meterRegistry = meterRegistry,
         )
 }
 
@@ -132,11 +135,13 @@ class RedisConfiguration(
     fun redisModule(
         redissonReactiveClient: RedissonReactiveClient,
         inMemoryRateLimitFallback: InMemoryRateLimitFallback,
+        meterRegistry: MeterRegistry,
     ): RedisModule =
         ReactiveRedissonClientModule(
             client = redissonReactiveClient,
             redisFailureMode = appConfig.security.redisFailureMode,
             inMemoryFallback = inMemoryRateLimitFallback,
+            meterRegistry = meterRegistry,
         )
 }
 

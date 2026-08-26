@@ -12,4 +12,13 @@ interface RedisModule {
     suspend fun increment(key: String, count: Long, ttlSeconds: Long = 60): Long
 
     suspend fun remainingTtl(key: String): Long
+
+    /**
+     * Admin-only key lookup, backed by SCAN (never KEYS) so it does not block the server on a
+     * large keyspace. Bounded by [limit]; ordering is unspecified and the result may be a
+     * partial view of a keyspace that is changing underneath the scan.
+     *
+     * Only the blacklist admin endpoint uses this — the request path must never scan.
+     */
+    suspend fun scanKeys(pattern: String, limit: Int): List<String>
 }
