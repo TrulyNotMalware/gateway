@@ -14,16 +14,17 @@ root. Developer tooling only — nothing here is on the build or runtime path, a
 | `apply.sh` | Detects the OS and copies the matching preset to `../gradle.properties`; accepts `force` or `common` |
 | `gradle-macos.properties` | ZGC without Linux-specific flags, Apple Silicon tuning, 6GB heap, file-system watching |
 | `gradle-linux.properties` | 8GB heap, transparent huge pages, heavier parallelism |
+| `gradle-common.properties` | `apply.sh common` and unknown-OS fallback: 4GB heap, no collector or OS-specific flags |
 | `README.md` | Usage and the rationale for each preset |
 
 ## For AI Agents
 
 ### Working In This Directory
-- `apply.sh` **overwrites the project's `gradle.properties`**, which is a tracked file. Running it
-  produces a working-tree change; check `git diff` before committing so a machine-local preset does
-  not land on `main`.
-- The committed root `gradle.properties` is the macOS-derived preset (6GB, ZGC, configuration cache
-  on). Treat it as the shared default rather than a personal setting.
+- `apply.sh` **overwrites the project's `gradle.properties`** (backing up an existing one unless
+  run with `force`). That file is git-ignored: it is per machine, nothing in the repository ships
+  one, and CI builds with Gradle's defaults.
+- Every preset `apply.sh` can pick must exist here: `common` and the unknown-OS path both copy
+  `gradle-common.properties`, and the script exits with "Configuration file not found" otherwise.
 - `README.md` carries both the presets' minimum floors and a "Verified with" block naming the
   stack this repo actually builds against. The floors are about the presets; the verified block
   must track `build.gradle.kts` and the wrapper — update it when a Dependabot bump lands.

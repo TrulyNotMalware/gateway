@@ -19,7 +19,7 @@ backend breaks the trust model.
 |------|-------------|
 | `build.gradle.kts` | Kotlin JVM 2.4.10 + Spring Boot 4.1.0 + ktlint 14.2.0; Java 25 toolchain (Adoptium); BOM-driven dependency versions |
 | `settings.gradle.kts` | Single-module build, `rootProject.name = "gateway"` |
-| `gradle.properties` | Gradle daemon JVM args (6g, ZGC), configuration cache + parallel + build cache all on |
+| `gradle.properties` | Git-ignored and per machine: written by `gradle-config/apply.sh` from an OS preset (daemon JVM args, configuration cache, parallel, build cache). CI runs without one |
 | `Dockerfile` | `eclipse-temurin:25.0.1_8-jre-alpine`, copies `build/libs/gateway-alpha.jar`, exec-form ENTRYPOINT so SIGTERM reaches the JVM |
 | `.dockerignore` | Keeps the build context to the bootJar only |
 | `.editorconfig` | ktlint-backed formatting rules |
