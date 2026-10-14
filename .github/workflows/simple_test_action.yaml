@@ -5,6 +5,8 @@ on:
       - "feature/*"
       - "feat/*"
       - "features/*"
+      # Version-bump branches are tested before they are merged.
+      - "dependabot/**"
     paths:
       - "src/**"
       - "test/**"
