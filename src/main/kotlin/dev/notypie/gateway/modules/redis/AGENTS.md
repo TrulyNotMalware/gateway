@@ -52,6 +52,10 @@ state is only meaningful cluster-wide; a per-pod copy would be worse than the cu
 Its `increment` carries over the existing window's deadline so a sustained burst keeps incrementing
 one counter — matching the Lua script's "EXPIRE only on first INCR" semantics.
 
+**`InMemoryModule.increment` starts a new window when the entry has expired**, like Redis after
+the key's TTL ran out. It used to add to the stale entry and keep its past deadline until the next
+`remainingTtl` call or the 5-minute sweep removed it.
+
 **The `HYBRID_IN_MEMORY` + null-fallback combination is rejected in the constructor** via `require`,
 so a misconfigured deployment fails in the startup log rather than on the first Redis hiccup.
 

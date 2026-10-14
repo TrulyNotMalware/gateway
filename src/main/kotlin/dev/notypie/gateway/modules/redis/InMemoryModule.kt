@@ -73,9 +73,12 @@ class InMemoryModule :
     override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long =
         cache
             .compute(key) { _, old ->
+                // An expired entry is a closed window: start a new one, as Redis would after the
+                // key expired. Carrying it over kept counting against a deadline already past.
+                val live = old?.takeUnless { it.isExpired }
                 val expiresAt =
-                    old?.expiresAtMillis ?: (System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(ttlSeconds))
-                val oldValue = old?.value?.toLongOrNull() ?: 0L
+                    live?.expiresAtMillis ?: (System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(ttlSeconds))
+                val oldValue = live?.value?.toLongOrNull() ?: 0L
                 val newValue = oldValue + count
                 CacheEntry(newValue.toString(), expiresAt)
             }?.value
