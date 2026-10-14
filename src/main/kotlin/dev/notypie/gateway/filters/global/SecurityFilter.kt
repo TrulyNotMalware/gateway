@@ -25,6 +25,7 @@ import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 @Component
 class SecurityFilter(
@@ -68,100 +69,129 @@ class SecurityFilter(
                     .getAttribute<String>(TrustHeaderStripFilter.CAPTURED_API_KEY_ATTR)
                     ?.takeIf { it in config.allowedApiKeys }
 
-            try {
-                withTimeout(config.timeoutMs) {
-                    coroutineScope {
-                        val isBlacklisted =
-                            async {
-                                if (config.enableBlacklist) {
-                                    blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId)
-                                } else {
-                                    false
-                                }
-                            }
-
-                        val rateLimitResult =
-                            async {
-                                if (config.enableRateLimit) {
-                                    rateLimitService.checkMultipleRateLimits(
-                                        ip = clientIp,
-                                        userId = userId,
-                                        endpoint = endpoint,
-                                        limits =
-                                            RateLimitConfig(
-                                                ipMaxRequests = config.ipMaxRequests,
-                                                userMaxRequests = config.userMaxRequests,
-                                                endpointMaxRequests = config.endpointMaxRequests,
-                                                windowSeconds = config.windowSeconds,
-                                            ),
-                                    )
-                                } else {
-                                    RateLimitResult.allowed(Long.MAX_VALUE, -1)
-                                }
-                            }
-
-                        // Login endpoints are pre-auth (identity == IP) with small fixed account
-                        // sets, so the generic 100/min endpoint quota is too loose. Run a dedicated
-                        // tight IP-keyed check and combine: block if EITHER exceeds, report the
-                        // tighter remaining. Same increment path → redisFailureMode/HYBRID fallback
-                        // applies identically.
-                        val loginResult =
-                            async {
-                                if (config.enableRateLimit && endpoint in config.loginPaths) {
-                                    rateLimitService.checkLoginRateLimit(
-                                        ip = clientIp,
-                                        maxRequests = config.loginMaxRequests,
-                                        windowSeconds = config.loginWindowSeconds,
-                                    )
-                                } else {
-                                    RateLimitResult.allowed(Long.MAX_VALUE, -1)
-                                }
-                            }
-
-                        val apiKeyResult =
-                            async {
-                                if (config.enableRateLimit && apiKey != null) {
-                                    rateLimitService.checkApiKeyRateLimit(
-                                        apiKey = apiKey,
-                                        maxRequests = config.apiKeyMaxRequests,
-                                        windowSeconds = config.windowSeconds,
-                                    )
-                                } else {
-                                    RateLimitResult.allowed(Long.MAX_VALUE, -1)
-                                }
-                            }
-
-                        val blacklisted = isBlacklisted.await()
-                        // Every extra dimension can only lower the surviving `remaining`, so
-                        // adding one never loosens an existing limit.
-                        val rateLimit =
-                            tighter(
-                                tighter(rateLimitResult.await(), loginResult.await()),
-                                apiKeyResult.await(),
-                            )
-
-                        when {
-                            blacklisted -> {
-                                blockRequest(exchange, "BLACKLISTED", clientIp, userId)
-                            }
-
-                            !rateLimit.allowed -> {
-                                blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
-                            }
-
-                            else -> {
-                                addRateLimitHeaders(exchange.response, rateLimit)
-                                chain.filter(exchange).awaitSingleOrNull()
-                            }
-                        }
+            // Only the checks run under the deadline and the catch below. chain.filter stays outside
+            // both: inside, a backend slower than timeoutMs was cancelled mid-response, and the
+            // failure handler then ran the rest of the chain a second time.
+            val decision =
+                try {
+                    withTimeout(config.timeoutMs) {
+                        evaluate(clientIp = clientIp, userId = userId, endpoint = endpoint, apiKey = apiKey)
                     }
+                } catch (e: TimeoutCancellationException) {
+                    handleSecurityCheckFailure(clientIp, "timeout", e)
+                } catch (e: CancellationException) {
+                    // The exchange itself was cancelled (client gone) — not a check failure.
+                    throw e
+                } catch (e: Exception) {
+                    handleSecurityCheckFailure(clientIp, "exception", e)
                 }
-            } catch (e: TimeoutCancellationException) {
-                handleSecurityCheckFailure(exchange, chain, clientIp, userId, "timeout", e)
-            } catch (e: Exception) {
-                handleSecurityCheckFailure(exchange, chain, clientIp, userId, "exception", e)
+
+            when (decision) {
+                is Decision.Block -> {
+                    blockRequest(exchange, decision.reason, clientIp, userId)
+                }
+
+                is Decision.Allow -> {
+                    decision.rateLimit?.let { addRateLimitHeaders(exchange.response, it) }
+                    chain.filter(exchange).awaitSingleOrNull()
+                }
             }
         }.then()
+
+    /** Outcome of the checks: computed under the deadline, acted on outside it. */
+    private sealed interface Decision {
+        data class Allow(
+            val rateLimit: RateLimitResult?,
+        ) : Decision
+
+        data class Block(
+            val reason: String,
+        ) : Decision
+    }
+
+    private suspend fun evaluate(
+        clientIp: String,
+        userId: String?,
+        endpoint: String,
+        apiKey: String?,
+    ): Decision =
+        coroutineScope {
+            val config = appConfig.security
+            val isBlacklisted =
+                async {
+                    if (config.enableBlacklist) {
+                        blacklistService.isAnyBlacklisted(ip = clientIp, userId = userId)
+                    } else {
+                        false
+                    }
+                }
+
+            val rateLimitResult =
+                async {
+                    if (config.enableRateLimit) {
+                        rateLimitService.checkMultipleRateLimits(
+                            ip = clientIp,
+                            userId = userId,
+                            endpoint = endpoint,
+                            limits =
+                                RateLimitConfig(
+                                    ipMaxRequests = config.ipMaxRequests,
+                                    userMaxRequests = config.userMaxRequests,
+                                    endpointMaxRequests = config.endpointMaxRequests,
+                                    windowSeconds = config.windowSeconds,
+                                ),
+                        )
+                    } else {
+                        RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                    }
+                }
+
+            // Login endpoints are pre-auth (identity == IP) with small fixed account
+            // sets, so the generic 100/min endpoint quota is too loose. Run a dedicated
+            // tight IP-keyed check and combine: block if EITHER exceeds, report the
+            // tighter remaining. Same increment path → redisFailureMode/HYBRID fallback
+            // applies identically.
+            val loginResult =
+                async {
+                    if (config.enableRateLimit && endpoint in config.loginPaths) {
+                        rateLimitService.checkLoginRateLimit(
+                            ip = clientIp,
+                            maxRequests = config.loginMaxRequests,
+                            windowSeconds = config.loginWindowSeconds,
+                        )
+                    } else {
+                        RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                    }
+                }
+
+            val apiKeyResult =
+                async {
+                    if (config.enableRateLimit && apiKey != null) {
+                        rateLimitService.checkApiKeyRateLimit(
+                            apiKey = apiKey,
+                            maxRequests = config.apiKeyMaxRequests,
+                            windowSeconds = config.windowSeconds,
+                        )
+                    } else {
+                        RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                    }
+                }
+
+            val blacklisted = isBlacklisted.await()
+            // Every extra dimension can only lower the surviving `remaining`, so
+            // adding one never loosens an existing limit.
+            val rateLimit =
+                tighter(
+                    tighter(rateLimitResult.await(), loginResult.await()),
+                    apiKeyResult.await(),
+                )
+
+            when {
+                blacklisted -> Decision.Block("BLACKLISTED")
+                !rateLimit.allowed -> Decision.Block("RATE_LIMITED")
+                else -> Decision.Allow(rateLimit)
+            }
+        }
 
     /**
      * Combine two RateLimit results: block if EITHER denies, otherwise carry the tighter
@@ -188,29 +218,23 @@ class SecurityFilter(
      * HYBRID is treated as allow on timeout: its goal is "throttle locally when Redis is
      * unreachable", not "deny on slow Redis". A timeout means the per-call dispatch never
      * reached the in-memory path, so we cannot honour the local counter retroactively.
+     *
+     * Only the checks reach this handler; a failure of the downstream call propagates as is.
      */
-    private suspend fun handleSecurityCheckFailure(
-        exchange: ServerWebExchange,
-        chain: GatewayFilterChain,
-        clientIp: String,
-        userId: String?,
-        kind: String,
-        cause: Throwable,
-    ) {
+    private fun handleSecurityCheckFailure(clientIp: String, kind: String, cause: Throwable): Decision =
         when (appConfig.security.redisFailureMode) {
             RedisFailureMode.FAIL_OPEN, RedisFailureMode.HYBRID_IN_MEMORY -> {
                 logger.error(cause) {
                     "Security check $kind — allowing request (mode=${appConfig.security.redisFailureMode}): IP: $clientIp"
                 }
-                chain.filter(exchange).awaitSingleOrNull()
+                Decision.Allow(rateLimit = null)
             }
 
             RedisFailureMode.FAIL_CLOSED -> {
                 logger.error(cause) { "Security check $kind — denying request (mode=FAIL_CLOSED): IP: $clientIp" }
-                blockRequest(exchange, "RATE_LIMITED", clientIp, userId)
+                Decision.Block("RATE_LIMITED")
             }
         }
-    }
 
     private suspend fun blockRequest(
         exchange: ServerWebExchange,

@@ -43,6 +43,11 @@ rate-limit bucket that a single client could exhaust for everyone.
 ### SecurityFilter specifics
 - The blacklist check, the multi-dimension rate-limit check, and the login-specific rate-limit
   check run concurrently inside `coroutineScope` under a single `withTimeout(security.timeoutMs)`.
+- **The deadline and the failure handler cover only those checks.** They produce a decision
+  (allow or block); `chain.filter` runs after it, outside the `try`. Wrapping the downstream call
+  cut off every backend response slower than `timeoutMs` (prod: 1000 ms, file uploads allow 300 s)
+  and let the handler run the rest of the chain a second time. A `CancellationException` that is
+  not the deadline (the client went away) is rethrown, never treated as a failed check.
 - `tighter(a, b)` combines two `RateLimitResult`s: **check `allowed` first**, then compare
   `remaining`. A denied result must win even when both have `remaining == 0`.
 - Login paths (`security.loginPaths`) get a dedicated tight IP-keyed limit (default 10/min) because
