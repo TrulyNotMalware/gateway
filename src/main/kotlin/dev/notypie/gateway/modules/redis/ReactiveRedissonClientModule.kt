@@ -2,6 +2,8 @@ package dev.notypie.gateway.modules.redis
 
 import dev.notypie.gateway.configurations.RedisFailureMode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.awaitSingle
 import org.redisson.api.RScript
@@ -14,11 +16,13 @@ val logger = KotlinLogging.logger { }
 
 /**
  * `runCatching` also catches `CancellationException`. A cancelled call (SecurityFilter's deadline,
- * or the client going away) is not a Redis failure: rethrow it instead of logging an error and
- * dispatching by `redisFailureMode` (which, in HYBRID, counted the request in the in-memory fallback
- * after the deadline had already decided it).
+ * or the client going away) is not a Redis failure: propagate the cancellation instead of logging an
+ * error and dispatching by `redisFailureMode` (which, in HYBRID, counted the request in the in-memory
+ * fallback after the deadline had already decided it). A `CancellationException` that arrives as an
+ * error while this coroutine is still active (a future cancelled inside the client) stays a failure.
  */
-private fun <T> Result<T>.rethrowCancellation(): Result<T> = onFailure { if (it is CancellationException) throw it }
+private suspend fun <T> Result<T>.rethrowCancellation(): Result<T> =
+    onFailure { if (it is CancellationException) currentCoroutineContext().ensureActive() }
 
 class ReactiveRedissonClientModule(
     val client: RedissonReactiveClient,

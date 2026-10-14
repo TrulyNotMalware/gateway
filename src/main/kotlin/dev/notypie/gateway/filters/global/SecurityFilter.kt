@@ -10,6 +10,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.reactor.mono
 import kotlinx.coroutines.withTimeout
@@ -82,8 +84,11 @@ class SecurityFilter(
                 } catch (e: TimeoutCancellationException) {
                     handleSecurityCheckFailure(clientIp, "timeout", e)
                 } catch (e: CancellationException) {
-                    // The exchange itself was cancelled (client gone) — not a check failure.
-                    throw e
+                    // Cancelled exchange (client gone): ensureActive rethrows, it is not a check
+                    // failure. A CancellationException raised as an error by a library while the
+                    // exchange is still live is an ordinary failure and follows redisFailureMode.
+                    currentCoroutineContext().ensureActive()
+                    handleSecurityCheckFailure(clientIp, "exception", e)
                 } catch (e: Exception) {
                     handleSecurityCheckFailure(clientIp, "exception", e)
                 }

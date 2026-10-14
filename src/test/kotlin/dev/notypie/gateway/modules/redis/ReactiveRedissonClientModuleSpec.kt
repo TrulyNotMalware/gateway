@@ -3,6 +3,7 @@ package dev.notypie.gateway.modules.redis
 import dev.notypie.gateway.configurations.RedisFailureMode
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -14,6 +15,7 @@ import org.redisson.api.RScriptReactive
 import org.redisson.api.RedissonReactiveClient
 import org.redisson.client.codec.Codec
 import reactor.core.publisher.Mono
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Pins the module's own dispatch around the Redisson client (TTL sentinels, cancellation) with a
@@ -44,6 +46,32 @@ class ReactiveRedissonClientModuleSpec :
                 val seconds = moduleReturningTtl(42_500L).remainingTtl("k")
                 then("it is converted to whole seconds") {
                     seconds shouldBe 42L
+                }
+            }
+        }
+
+        given("increment in HYBRID_IN_MEMORY mode when the client fails with a CancellationException") {
+            // An internally cancelled future surfaces as an error while the caller is still active.
+            val script = mockk<RScriptReactive>()
+            every {
+                script.eval<Long>(
+                    any<RScript.Mode>(),
+                    any<String>(),
+                    any<RScript.ReturnType>(),
+                    any<List<Any>>(),
+                    *anyVararg(),
+                )
+            } returns Mono.error(CancellationException("cancelled inside the client"))
+            val client = mockk<RedissonReactiveClient>()
+            every { client.getScript(any<Codec>()) } returns script
+            val fallback = InMemoryRateLimitFallback()
+            val module = ReactiveRedissonClientModule(client, RedisFailureMode.HYBRID_IN_MEMORY, fallback)
+
+            `when`("the call fails while the coroutine is still active") {
+                val count = module.increment("rate_limit:ip:5.6.7.8", 1, 60)
+                then("it is a Redis failure: the in-memory fallback counts the request") {
+                    count shouldBe 1L
+                    fallback.remainingTtl("rate_limit:ip:5.6.7.8") shouldBeGreaterThan 0L
                 }
             }
         }

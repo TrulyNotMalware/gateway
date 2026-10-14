@@ -29,6 +29,7 @@ import java.net.URI
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 class SecurityFilterSpec :
@@ -556,7 +557,9 @@ class SecurityFilterSpec :
                 SecurityFilter(
                     BlacklistService(InMemoryModule()),
                     RateLimitService(InMemoryModule()),
-                    AppConfig(security = AppConfig.Security(timeoutMs = 100, redisFailureMode = mode)),
+                    // Generous margin: the in-memory checks must finish well inside it even on a slow CI
+                    // runner, while the backend below (1000 ms) is still slower than the deadline.
+                    AppConfig(security = AppConfig.Security(timeoutMs = 500, redisFailureMode = mode)),
                     jsonMapper,
                     resolver,
                 )
@@ -569,7 +572,7 @@ class SecurityFilterSpec :
                 )
 
             `when`("the backend answers after timeoutMs (mode=HYBRID_IN_MEMORY)") {
-                val chain = CountingChain { Mono.delay(Duration.ofMillis(400)).then() }
+                val chain = CountingChain { Mono.delay(Duration.ofMillis(1000)).then() }
                 filterFor(RedisFailureMode.HYBRID_IN_MEMORY).filter(upload("6.6.8.1"), chain).awaitSingleOrNull()
                 then("the downstream call runs once, to completion — timeoutMs bounds only the checks") {
                     chain.runs.get() shouldBe 1
@@ -578,7 +581,7 @@ class SecurityFilterSpec :
             }
 
             `when`("the backend answers after timeoutMs (mode=FAIL_CLOSED)") {
-                val chain = CountingChain { Mono.delay(Duration.ofMillis(400)).then() }
+                val chain = CountingChain { Mono.delay(Duration.ofMillis(1000)).then() }
                 val ex = upload("6.6.8.2")
                 filterFor(RedisFailureMode.FAIL_CLOSED).filter(ex, chain).awaitSingleOrNull()
                 then("a slow but healthy backend is not turned into a 429") {
@@ -647,6 +650,42 @@ class SecurityFilterSpec :
                 delay(300)
                 then("the cancellation is rethrown, not handled as a failed check that lets the request through") {
                     chain.runs.get() shouldBe 0
+                }
+            }
+        }
+
+        given("SecurityFilter when a check fails with a CancellationException while the request is live") {
+            // A library can surface an internally cancelled future as a CancellationException error.
+            // The exchange is not cancelled, so this is an ordinary check failure.
+            class CancellingExistsModule : RedisModule by InMemoryModule() {
+                override suspend fun exists(key: String): Boolean =
+                    throw CancellationException("cancelled inside the client")
+            }
+
+            `when`("mode=FAIL_CLOSED") {
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.9.1", 0)),
+                    )
+                var passed = false
+                SecurityFilter(
+                    BlacklistService(CancellingExistsModule()),
+                    RateLimitService(InMemoryModule()),
+                    AppConfig(security = AppConfig.Security(redisFailureMode = RedisFailureMode.FAIL_CLOSED)),
+                    jsonMapper,
+                    resolver,
+                ).filter(
+                    ex,
+                    GatewayFilterChain {
+                        passed = true
+                        Mono.empty()
+                    },
+                ).awaitSingleOrNull()
+                then("it follows redisFailureMode (429) instead of failing the request") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
                 }
             }
         }
