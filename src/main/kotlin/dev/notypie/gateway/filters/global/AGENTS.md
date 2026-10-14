@@ -64,6 +64,10 @@ rate-limit bucket that a single client could exhaust for everyone.
   coroutine *before* `ReactiveRedissonClientModule.increment`'s own fallback can run. It re-applies
   the operator's `redisFailureMode`, so `FAIL_CLOSED` does not silently degrade to `FAIL_OPEN` when
   Redis is merely slow. `HYBRID_IN_MEMORY` allows on timeout — the local counter was never reached.
+- The login-path match and the endpoint counter key use `normalizedPath` (segments
+  percent-decoded, `;` path parameters dropped), i.e. the path as Spring Security and the backend
+  read it. With the raw path, `/v1/auth/%6Cogin` passed `permitAll` as the login route yet skipped
+  the login limiter. The audit log still records the raw path.
 - Block decisions go to the `"AUDIT"` named logger as
   `decision=BLOCK reason=… ip=… userId=… path=… requestId=…`. Keep that shape; it is parsed downstream.
 - `X-API-Key` is still stripped at `-200`, but `TrustHeaderStripFilter` now captures the inbound

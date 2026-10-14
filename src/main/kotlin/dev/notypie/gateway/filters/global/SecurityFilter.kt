@@ -19,6 +19,8 @@ import org.springframework.cloud.gateway.support.ipresolver.RemoteAddressResolve
 import org.springframework.core.Ordered
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.server.PathContainer
+import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.http.server.reactive.ServerHttpResponse
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
@@ -57,7 +59,7 @@ class SecurityFilter(
                 blockRequest(exchange, "ACCESS_DENIED", "unknown", userId)
                 return@mono
             }
-            val endpoint = request.path.pathWithinApplication().value()
+            val endpoint = normalizedPath(request)
             val config = appConfig.security
             // TrustHeaderStripFilter(-200) removed X-API-Key from the request before this
             // filter(-100) runs, but captured the inbound value in an exchange attribute first.
@@ -281,6 +283,17 @@ class SecurityFilter(
             response.headers["Retry-After"] = result.resetTimeSeconds.toString()
         }
     }
+
+    /**
+     * The path the way routing, Spring Security and a decoding backend read it: each segment
+     * percent-decoded, `;` path parameters dropped. Keyed on the raw `pathWithinApplication().value()`,
+     * `/v1/auth/%6Cogin` (the same login route for Spring Security's permitAll and for the backend)
+     * skipped the login limiter, and every encoding of a path got its own endpoint counter.
+     */
+    private fun normalizedPath(request: ServerHttpRequest): String =
+        request.path.pathWithinApplication().elements().joinToString("") { element ->
+            if (element is PathContainer.PathSegment) element.valueToMatch() else element.value()
+        }
 
     /**
      * Resolve the client IP via `XForwardedRemoteAddressResolver(maxTrustedIndex = trustedProxyHops)`.

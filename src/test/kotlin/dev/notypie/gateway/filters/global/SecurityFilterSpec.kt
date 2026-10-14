@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.support.ipresolver.XForwardedRemoteAddressResolver
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.mock.web.server.MockServerWebExchange
@@ -24,6 +25,7 @@ import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 import java.net.InetSocketAddress
+import java.net.URI
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -246,6 +248,68 @@ class SecurityFilterSpec :
                 then("the 11th login is blocked with 429") {
                     passed shouldBe false
                     ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+
+            `when`("further login attempts arrive percent-encoded or with path parameters") {
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
+
+                // URI.create keeps the escapes as sent; the String overload would encode '%' again.
+                fun loginRequest(path: String) =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .method(HttpMethod.POST, URI.create(path))
+                            .remoteAddress(InetSocketAddress("7.7.7.8", 0)),
+                    )
+
+                repeat(
+                    10,
+                ) {
+                    filter
+                        .filter(
+                            loginRequest("/v1/auth/login"),
+                            GatewayFilterChain { Mono.empty() },
+                        ).awaitSingleOrNull()
+                }
+
+                val variants = listOf("/v1/auth/%6Cogin", "/v1/auth/login;x=1", "/v1/%61uth/login")
+                val statuses =
+                    variants.map { path ->
+                        val ex = loginRequest(path)
+                        filter.filter(ex, GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                        ex.response.statusCode
+                    }
+                then("they count as the same login path and are blocked with 429") {
+                    statuses shouldBe List(variants.size) { HttpStatus.TOO_MANY_REQUESTS }
+                }
+            }
+
+            `when`("one endpoint is requested under different encodings") {
+                val filter =
+                    SecurityFilter(
+                        BlacklistService(InMemoryModule()),
+                        RateLimitService(InMemoryModule()),
+                        cfg.copy(security = cfg.security.copy(endpointMaxRequests = 1)),
+                        jsonMapper,
+                        resolver,
+                    )
+
+                fun get(path: String): MockServerWebExchange {
+                    val ex =
+                        MockServerWebExchange.from(
+                            MockServerHttpRequest
+                                .method(HttpMethod.GET, URI.create(path))
+                                .remoteAddress(InetSocketAddress("7.7.7.9", 0)),
+                        )
+                    return ex
+                }
+
+                filter.filter(get("/v1/posts/a"), GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                val encoded = get("/v1/posts/%61")
+                filter.filter(encoded, GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                then("they share one endpoint counter") {
+                    encoded.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
                 }
             }
 

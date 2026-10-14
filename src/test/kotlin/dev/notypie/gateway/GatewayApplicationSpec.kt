@@ -22,6 +22,7 @@ import org.springframework.test.web.reactive.server.WebTestClient
 import reactor.core.publisher.Mono
 import reactor.netty.DisposableServer
 import reactor.netty.http.server.HttpServer
+import java.net.URI
 import java.time.Duration
 import java.time.Instant
 import java.util.Date
@@ -50,6 +51,7 @@ private const val IP_MAX_REQUESTS = 6
         // client IP (X-Forwarded-For; the resolver trusts the rightmost entry), so cases do not
         // share this budget.
         "app.config.security.ip-max-requests=$IP_MAX_REQUESTS",
+        "app.config.security.login-max-requests=1",
     ],
 )
 class GatewayApplicationSpec : BehaviorSpec() {
@@ -112,6 +114,23 @@ class GatewayApplicationSpec : BehaviorSpec() {
                     responses.last().second shouldBe "user-1"
                 }
             }
+
+            `when`("a second login attempt arrives with a percent-encoded path") {
+                fun login(path: String) =
+                    client()
+                        .post()
+                        .uri(URI.create("http://localhost:$port$path"))
+                        .header("X-Forwarded-For", "10.20.0.3")
+                        .exchange()
+                        .returnResult(String::class.java)
+                        .status
+                val first = login("/v1/auth/login")
+                val encoded = login("/v1/auth/%6Cogin")
+                then("Spring Security lets it through as the login route, and the login limit stops it") {
+                    first shouldBe HttpStatus.OK
+                    encoded shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
         }
     }
 
@@ -152,6 +171,7 @@ class GatewayApplicationSpec : BehaviorSpec() {
                     routes.get("/v1/me") { request, response ->
                         response.sendString(Mono.just(request.requestHeaders().get("X-User-ID") ?: "none"))
                     }
+                    routes.post("/v1/auth/login") { _, response -> response.sendString(Mono.just("logged-in")) }
                     routes.get("/v1/posts/slow") { _, response ->
                         response.sendString(
                             Mono
