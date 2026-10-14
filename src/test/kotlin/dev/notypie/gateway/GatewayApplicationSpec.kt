@@ -15,6 +15,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.reactor.awaitSingle
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -32,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val ISSUER = "test-issuer"
 private const val AUDIENCE = "test-audience"
 private const val IP_MAX_REQUESTS = 6
+private const val CORS = "spring.cloud.gateway.server.webflux.globalcors.cors-configurations.[/**]"
+private const val ALLOWED_ORIGIN = "https://app.example"
 
 /**
  * The one spec that boots the application: the real WebFilter + GlobalFilter chain, routing to a
@@ -52,6 +55,10 @@ private const val IP_MAX_REQUESTS = 6
         // share this budget.
         "app.config.security.ip-max-requests=$IP_MAX_REQUESTS",
         "app.config.security.login-max-requests=1",
+        "$CORS.allowed-origins=$ALLOWED_ORIGIN",
+        "$CORS.allowed-methods=GET,POST",
+        "$CORS.allowed-headers=Authorization,Content-Type",
+        "$CORS.allow-credentials=true",
     ],
 )
 class GatewayApplicationSpec : BehaviorSpec() {
@@ -129,6 +136,74 @@ class GatewayApplicationSpec : BehaviorSpec() {
                 then("Spring Security lets it through as the login route, and the login limit stops it") {
                     first shouldBe HttpStatus.OK
                     encoded shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+        }
+
+        given("a browser client on an allowed origin") {
+            `when`("Spring Security rejects its token") {
+                val result =
+                    client()
+                        .get()
+                        .uri("/v1/me")
+                        .header("Origin", ALLOWED_ORIGIN)
+                        .header("Authorization", "Bearer not-a-jwt")
+                        .exchange()
+                        .returnResult(String::class.java)
+                then("the 401 carries CORS headers, so the client can read it") {
+                    result.status shouldBe HttpStatus.UNAUTHORIZED
+                    result.responseHeaders.accessControlAllowOrigin shouldBe ALLOWED_ORIGIN
+                    result.responseHeaders.accessControlAllowCredentials shouldBe true
+                }
+            }
+
+            `when`("it sends a preflight") {
+                val result =
+                    client()
+                        .options()
+                        .uri("/v1/me")
+                        .header("Origin", ALLOWED_ORIGIN)
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers", "Authorization")
+                        .exchange()
+                        .returnResult(String::class.java)
+                then("it is answered with the configured CORS policy") {
+                    result.status shouldBe HttpStatus.OK
+                    result.responseHeaders.accessControlAllowOrigin shouldBe ALLOWED_ORIGIN
+                }
+            }
+
+            `when`("an authenticated request is routed to the backend") {
+                val result =
+                    client()
+                        .get()
+                        .uri("/v1/me")
+                        .header("Origin", ALLOWED_ORIGIN)
+                        .header("Authorization", "Bearer ${signedToken(subject = "user-2")}")
+                        .header("X-Forwarded-For", "10.20.0.4")
+                        .exchange()
+                        .returnResult(String::class.java)
+                then("the response carries Access-Control-Allow-Origin exactly once") {
+                    result.status shouldBe HttpStatus.OK
+                    result.responseHeaders[HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN] shouldBe listOf(ALLOWED_ORIGIN)
+                }
+            }
+        }
+
+        given("a browser client on an origin that is not allowed") {
+            `when`("it sends a request") {
+                val result =
+                    client()
+                        .get()
+                        .uri("/v1/me")
+                        .header("Origin", "https://evil.example")
+                        .header("Authorization", "Bearer ${signedToken(subject = "user-3")}")
+                        .header("X-Forwarded-For", "10.20.0.5")
+                        .exchange()
+                        .returnResult(String::class.java)
+                then("it is still rejected, without CORS headers") {
+                    result.status shouldBe HttpStatus.FORBIDDEN
+                    result.responseHeaders.accessControlAllowOrigin shouldBe null
                 }
             }
         }

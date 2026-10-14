@@ -2,6 +2,7 @@ package dev.notypie.gateway.configurations
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.netty.channel.ChannelOption
+import org.springframework.cloud.gateway.config.GlobalCorsProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -26,6 +27,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtIss
 import org.springframework.security.oauth2.server.resource.authentication.JwtReactiveAuthenticationManager
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverter
 import org.springframework.security.web.server.SecurityWebFilterChain
+import org.springframework.web.cors.reactive.CorsConfigurationSource
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
@@ -69,8 +72,12 @@ class SecurityConfig(
     private val logger = KotlinLogging.logger {}
 
     @Bean
-    fun springSecurityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
+    fun springSecurityFilterChain(
+        http: ServerHttpSecurity,
+        globalCorsProperties: GlobalCorsProperties,
+    ): SecurityWebFilterChain {
         http
+            .cors { it.configurationSource(gatewayCorsSource(globalCorsProperties)) }
             .csrf { it.disable() } // Stateless API gateway — CSRF tokens are not meaningful.
             .formLogin { it.disable() }
             .httpBasic { it.disable() }
@@ -102,6 +109,19 @@ class SecurityConfig(
             }
         return http.build()
     }
+
+    /**
+     * The gateway's own `globalcors` configurations, applied once more by Spring Security's CORS
+     * filter, which runs before authentication.
+     *
+     * The gateway adds CORS headers in its handler mapping, after every WebFilter. A 401 from
+     * this chain is written before that, so it carried no `Access-Control-Allow-Origin` and a
+     * browser client could not read it (an expired token looked like a network error). The
+     * handler mapping skips a response that already has CORS headers, so routed responses are
+     * unchanged. Per-route `cors` metadata is not mirrored here; none is configured.
+     */
+    private fun gatewayCorsSource(globalCorsProperties: GlobalCorsProperties): CorsConfigurationSource =
+        UrlBasedCorsConfigurationSource().apply { setCorsConfigurations(globalCorsProperties.corsConfigurations) }
 
     /**
      * Per-issuer authentication-manager resolver. The `iss` claim picks the manager;
