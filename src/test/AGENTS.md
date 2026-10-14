@@ -15,14 +15,14 @@ testing — no Spring context, no Testcontainers, and no live Redis.
 | `GatewayApplicationSpec.kt` | The only context-starting spec: the real WebFilter + GlobalFilter chain routing to a stub backend on a real socket (in-memory Redis mode) |
 | `configurations/AppConfigValidatorSpec.kt` | Every fail-fast startup invariant, positive and negative |
 | `configurations/SecurityValidatorsSpec.kt` | `KidPresenceValidator`, `RequiredClaimsValidator`, `AccessTokenTypeValidator`, `audienceValidator` |
-| `filters/global/SecurityFilterSpec.kt` | Largest spec — blacklist/rate-limit decisions, `tighter()`, timeout and failure-mode dispatch, block responses |
+| `filters/global/SecurityFilterSpec.kt` | Largest spec — blacklist/rate-limit decisions, timeout and failure-mode dispatch, block responses |
 | `filters/global/RequestIdFilterSpec.kt` | Header validation, UUID minting, response echo |
 | `filters/global/TrustHeaderStripFilterSpec.kt` | Strip behaviour and the no-op fast path |
 | `filters/global/SecurityHeadersFilterSpec.kt` | Header presence and set-if-absent |
 | `filters/global/JwtUserIdInjectionFilterSpec.kt` | `sub` → `X-User-ID`, unauthenticated pass-through |
 | `modules/redis/InMemoryModuleSpec.kt` | Increment, TTL, expiry, delete |
 | `modules/redis/InMemoryRateLimitFallbackSpec.kt` | Window carry-over and purge |
-| `service/RateLimitServiceSpec.kt` | Limit thresholds, `checkMultipleRateLimits` selection |
+| `service/RateLimitServiceSpec.kt` | Limit thresholds, `checkMultipleRateLimits` selection, `RateLimitResult.tighter` |
 | `service/BlacklistServiceSpec.kt` | Per-type keys, `isAnyBlacklisted` |
 | `controllers/FallbackControllerSpec.kt` | 503 status and body shape |
 

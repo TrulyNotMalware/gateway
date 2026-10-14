@@ -183,8 +183,8 @@ class SecurityFilter(
             // Every extra dimension can only lower the surviving `remaining`, so
             // adding one never loosens an existing limit.
             val rateLimit =
-                tighter(
-                    tighter(rateLimitResult.await(), loginResult.await()),
+                RateLimitResult.tighter(
+                    RateLimitResult.tighter(rateLimitResult.await(), loginResult.await()),
                     apiKeyResult.await(),
                 )
 
@@ -193,18 +193,6 @@ class SecurityFilter(
                 !rateLimit.allowed -> Decision.Block("RATE_LIMITED")
                 else -> Decision.Allow(rateLimit)
             }
-        }
-
-    /**
-     * Combine two RateLimit results: block if EITHER denies, otherwise carry the tighter
-     * remaining. A denied result must win even when both have the same `remaining` (e.g. both 0),
-     * so check `allowed` first rather than relying on `remaining` as a proxy for it.
-     */
-    private fun tighter(a: RateLimitResult, b: RateLimitResult): RateLimitResult =
-        when {
-            !a.allowed -> a
-            !b.allowed -> b
-            else -> if (a.remaining <= b.remaining) a else b
         }
 
     /**

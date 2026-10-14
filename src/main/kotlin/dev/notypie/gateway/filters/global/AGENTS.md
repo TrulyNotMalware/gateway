@@ -55,7 +55,7 @@ rate-limit bucket that a single client could exhaust for everyone.
   cut off every backend response slower than `timeoutMs` (prod: 1000 ms, file uploads allow 300 s)
   and let the handler run the rest of the chain a second time. A `CancellationException` that is
   not the deadline (the client went away) is rethrown, never treated as a failed check.
-- `tighter(a, b)` combines two `RateLimitResult`s: **check `allowed` first**, then compare
+- `RateLimitResult.tighter(a, b)` combines two results: **check `allowed` first**, then compare
   `remaining`. A denied result must win even when both have `remaining == 0`.
 - Login paths (`security.loginPaths`) get a dedicated tight IP-keyed limit (default 10/min) because
   they are pre-auth — the generic 100/min endpoint quota is far too loose for a small fixed

@@ -29,9 +29,12 @@ them as a wire format:
 | `rate_limit:api_key:<key>` | `checkApiKeyRateLimit` — only reached for keys in `security.allowedApiKeys` |
 
 ### Working In This Directory
-- `checkMultipleRateLimits` fans out with `async` + `awaitAll` and returns the result with the
-  **smallest `remaining`**. Note it selects by `remaining`, not by `allowed` — `SecurityFilter.tighter`
-  is what guarantees a denial wins. Keep that division of responsibility in mind before changing either.
+- `checkMultipleRateLimits` fans out with `async` + `awaitAll` and folds the results with
+  `RateLimitResult.tighter`: a denial wins, otherwise the smallest `remaining`. It used to pick by
+  `remaining` alone and left denials to `SecurityFilter`, but the filter only sees the one result
+  returned here — an allowed dimension at exactly its limit (`remaining == 0`) tied with an exceeded
+  one and let the request through. `SecurityFilter` combines the login and API-key results with the
+  same function.
 - `isAnyBlacklisted` checks IP and (when present) user concurrently and short-circuits on any hit.
   With no checks queued it returns `false`.
 - `checkRateLimit` increments **then** reads TTL — two round trips. Every counter dimension costs
