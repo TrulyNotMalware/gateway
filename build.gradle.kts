@@ -1,5 +1,6 @@
 import org.gradle.kotlin.dsl.withType
 import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
+import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 plugins {
     kotlin("jvm") version "2.4.10"
@@ -12,15 +13,24 @@ plugins {
 group = "dev.notypie"
 version = "alpha"
 
-// remove ext
-val springCloudVersion by extra("2025.1.2")
-val kotestVersion by extra("6.2.0")
-val mockkVersion by extra("1.14.11")
-val springBootVersion by extra("4.1.0")
-val redissonVersion by extra("4.6.0")
-val kotlinxVersion by extra("1.11.0")
-val reactorKotlinExtensionVersion by extra("1.3.1")
-val kotlinLoggingVersion by extra("8.0.4")
+// Versions the Spring Boot BOM does not manage. Declared as extra["…"] = "…" (a form Dependabot's
+// Gradle parser reads) and read back below; `val x by extra("…")` is deprecated since Gradle 9.6.
+// Spring Boot itself follows the plugin version (SpringBootPlugin.BOM_COORDINATES), and
+// kotlinx-coroutines follows the Boot BOM: io.spring.dependency-management overrode the separate
+// coroutines BOM anyway (1.11.0 -> 1.10.2).
+extra["springCloudVersion"] = "2025.1.2"
+extra["kotestVersion"] = "6.2.0"
+extra["mockkVersion"] = "1.14.11"
+extra["redissonVersion"] = "4.6.0"
+extra["reactorKotlinExtensionVersion"] = "1.3.1"
+extra["kotlinLoggingVersion"] = "8.0.4"
+
+val springCloudVersion = extra["springCloudVersion"] as String
+val kotestVersion = extra["kotestVersion"] as String
+val mockkVersion = extra["mockkVersion"] as String
+val redissonVersion = extra["redissonVersion"] as String
+val reactorKotlinExtensionVersion = extra["reactorKotlinExtensionVersion"] as String
+val kotlinLoggingVersion = extra["kotlinLoggingVersion"] as String
 
 repositories {
     mavenCentral()
@@ -53,18 +63,14 @@ dependencies {
     implementation(
         platform("org.springframework.cloud:spring-cloud-dependencies:$springCloudVersion"),
     )
-    // Kotlinx-bom
-    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:$kotlinxVersion"))
     // Springboot-bom
-    implementation(
-        platform("org.springframework.boot:spring-boot-dependencies:$springBootVersion"),
-    )
+    implementation(platform(SpringBootPlugin.BOM_COORDINATES))
     // Redisson client
     implementation("org.redisson:redisson-spring-boot-starter:$redissonVersion")
 
     // Coroutine
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
-    // jackson
+    // Reactor Kotlin extensions
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions:$reactorKotlinExtensionVersion")
     // actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
