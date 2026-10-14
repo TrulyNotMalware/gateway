@@ -45,7 +45,12 @@ operator's configured stance. `set`/`get`/`delete` degrade quietly by design; ke
 | `HYBRID_IN_MEMORY` | delegate to `InMemoryRateLimitFallback` | delegate |
 
 `-2L` means "key missing" — reporting no info is preferred over fabricating a TTL for a response
-header.
+header. On success `remainingTtl` passes Redis's own `-2` / `-1` sentinels through unchanged and
+converts only real millisecond TTLs to seconds.
+
+**A `CancellationException` is never a Redis failure.** Every `runCatching` is followed by
+`rethrowCancellation()`: a call cancelled by `SecurityFilter`'s deadline or by the client going
+away propagates instead of being logged as an error and dispatched by `redisFailureMode`.
 
 **`InMemoryRateLimitFallback` mirrors only the counter surface, never the blacklist.** Blacklist
 state is only meaningful cluster-wide; a per-pod copy would be worse than the current behaviour.
@@ -64,9 +69,10 @@ loop every 5 minutes and `job.cancel()` + `clear()` on destroy. A new map-backed
 the same lifecycle or it leaks expired keys.
 
 ### Testing Requirements
-`InMemoryModuleSpec` and `InMemoryRateLimitFallbackSpec` cover the in-memory paths. There is no
-spec for `ReactiveRedissonClientModule` — it needs a live Redis; verify changes to it through
-`RateLimitServiceSpec` against `InMemoryModule` plus manual testing.
+`InMemoryModuleSpec` and `InMemoryRateLimitFallbackSpec` cover the in-memory paths.
+`ReactiveRedissonClientModuleSpec` mocks the Redisson client to pin the module's own dispatch (TTL
+sentinels, cancellation). Redis semantics (the Lua script, real expiry) still need a live Redis;
+verify those through `RateLimitServiceSpec` against `InMemoryModule` plus manual testing.
 
 ## Dependencies
 

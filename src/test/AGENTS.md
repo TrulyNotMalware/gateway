@@ -22,6 +22,7 @@ testing — no Spring context, no Testcontainers, and no live Redis.
 | `filters/global/JwtUserIdInjectionFilterSpec.kt` | `sub` → `X-User-ID`, unauthenticated pass-through |
 | `modules/redis/InMemoryModuleSpec.kt` | Increment, TTL, expiry, delete |
 | `modules/redis/InMemoryRateLimitFallbackSpec.kt` | Window carry-over and purge |
+| `modules/redis/ReactiveRedissonClientModuleSpec.kt` | TTL sentinels and cancellation, over a mocked Redisson client |
 | `service/RateLimitServiceSpec.kt` | Limit thresholds, `checkMultipleRateLimits` selection, `RateLimitResult.tighter` |
 | `service/BlacklistServiceSpec.kt` | Per-type keys, `isAnyBlacklisted` |
 | `controllers/FallbackControllerSpec.kt` | 503 status and body shape |
@@ -38,8 +39,9 @@ testing — no Spring context, no Testcontainers, and no live Redis.
   between cases otherwise.
 
 ### Working In This Directory
-- Every production class currently has a matching spec except `LoggingFilter` (no branching) and
-  `ReactiveRedissonClientModule` (needs a live Redis). Preserve that — a new class without a spec
+- Every production class currently has a matching spec except `LoggingFilter` (no branching).
+  `ReactiveRedissonClientModuleSpec` mocks the Redisson client, the one storage-layer mock: Redis
+  semantics themselves still need a live Redis. Preserve that — a new class without a spec
   is an incomplete change.
 - Keep `@SpringBootTest` to the single `GatewayApplicationSpec`; prefer constructing the class
   under test directly. That spec exists because filter interactions with the gateway's own routing
