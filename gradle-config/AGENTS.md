@@ -23,8 +23,9 @@ root. Developer tooling only — nothing here is on the build or runtime path, a
 - `apply.sh` **overwrites the project's `gradle.properties`** (backing up an existing one unless
   run with `force`). That file is git-ignored: it is per machine, nothing in the repository ships
   one, and CI builds with Gradle's defaults.
-- Every preset `apply.sh` can pick must exist here: `common` and the unknown-OS path both copy
-  `gradle-common.properties`, and the script exits with "Configuration file not found" otherwise.
+- Every preset `apply.sh` can pick must exist here: it copies `gradle-<os>.properties` for macOS and
+  Linux, and `gradle-common.properties` for `common`, Windows shells (Git Bash, MSYS, Cygwin) and any
+  other OS. A missing preset stops the script with "Configuration file not found".
 - `README.md` carries both the presets' minimum floors and a "Verified with" block naming the
   stack this repo actually builds against. The floors are about the presets; the verified block
   must track `build.gradle.kts` and the wrapper — update it when a Dependabot bump lands.
