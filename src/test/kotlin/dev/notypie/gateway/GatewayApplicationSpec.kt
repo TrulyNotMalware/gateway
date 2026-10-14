@@ -1,5 +1,14 @@
 package dev.notypie.gateway
 
+import com.nimbusds.jose.JOSEObjectType
+import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.JWSHeader
+import com.nimbusds.jose.crypto.RSASSASigner
+import com.nimbusds.jose.jwk.JWKSet
+import com.nimbusds.jose.jwk.RSAKey
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+import com.nimbusds.jwt.JWTClaimsSet
+import com.nimbusds.jwt.SignedJWT
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.extensions.spring.SpringExtension
 import io.kotest.matchers.shouldBe
@@ -14,7 +23,14 @@ import reactor.core.publisher.Mono
 import reactor.netty.DisposableServer
 import reactor.netty.http.server.HttpServer
 import java.time.Duration
+import java.time.Instant
+import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
+
+// Top level: the @SpringBootTest properties below cannot see companion members.
+private const val ISSUER = "test-issuer"
+private const val AUDIENCE = "test-audience"
+private const val IP_MAX_REQUESTS = 6
 
 /**
  * The one spec that boots the application: the real WebFilter + GlobalFilter chain, routing to a
@@ -28,10 +44,12 @@ import java.util.concurrent.atomic.AtomicInteger
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
-        "app.config.jwt.issuers[0].issuer=test",
-        "app.config.jwt.issuers[0].jwks-uri=http://localhost:1/unused",
         // The prod value: the deadline for the blacklist / rate-limit checks.
         "app.config.security.timeout-ms=1000",
+        // Small enough that counting a request twice is visible. Each case sends from its own
+        // client IP (X-Forwarded-For; the resolver trusts the rightmost entry), so cases do not
+        // share this budget.
+        "app.config.security.ip-max-requests=$IP_MAX_REQUESTS",
     ],
 )
 class GatewayApplicationSpec : BehaviorSpec() {
@@ -55,6 +73,7 @@ class GatewayApplicationSpec : BehaviorSpec() {
                     client()
                         .get()
                         .uri("/v1/posts/slow")
+                        .header("X-Forwarded-For", "10.20.0.1")
                         .exchange()
                         .returnResult(String::class.java)
                 val body =
@@ -68,11 +87,56 @@ class GatewayApplicationSpec : BehaviorSpec() {
                     slowCompleted.get() shouldBe 1
                 }
             }
+
+            `when`("an authenticated client sends ip-max-requests requests") {
+                val token = signedToken(subject = "user-1")
+                val responses =
+                    (1..IP_MAX_REQUESTS).map {
+                        val result =
+                            client()
+                                .get()
+                                .uri("/v1/me")
+                                .header("Authorization", "Bearer $token")
+                                .header("X-Forwarded-For", "10.20.0.2")
+                                .exchange()
+                                .returnResult(String::class.java)
+                        result.status to
+                            result.responseBody
+                                .collectList()
+                                .awaitSingle()
+                                .joinToString("")
+                    }
+                then("every request passes once through the chain, carrying the verified X-User-ID") {
+                    // Counted twice per request, the IP budget would run out halfway.
+                    responses.map { it.first } shouldBe List(IP_MAX_REQUESTS) { HttpStatus.OK }
+                    responses.last().second shouldBe "user-1"
+                }
+            }
         }
     }
 
     companion object {
         private const val SLOW_BODY = "slow-body"
+
+        private val signingKey: RSAKey = RSAKeyGenerator(2048).keyID("test-key").generate()
+
+        private fun signedToken(subject: String): String =
+            SignedJWT(
+                JWSHeader
+                    .Builder(JWSAlgorithm.RS256)
+                    .keyID(signingKey.keyID)
+                    .type(JOSEObjectType.JWT)
+                    .build(),
+                JWTClaimsSet
+                    .Builder()
+                    .issuer(ISSUER)
+                    .audience(AUDIENCE)
+                    .subject(subject)
+                    .expirationTime(Date.from(Instant.now().plusSeconds(300)))
+                    .build(),
+            ).apply { sign(RSASSASigner(signingKey)) }
+                .serialize()
+
         private val slowCompleted = AtomicInteger()
 
         private val backend: DisposableServer =
@@ -81,6 +145,13 @@ class GatewayApplicationSpec : BehaviorSpec() {
                 .host("localhost")
                 .port(0)
                 .route { routes ->
+                    routes.get("/jwks") { _, response ->
+                        response.sendString(Mono.just(JWKSet(signingKey.toPublicJWK()).toString()))
+                    }
+                    // Echoes what the gateway stamped, so a case can check the forwarded identity.
+                    routes.get("/v1/me") { request, response ->
+                        response.sendString(Mono.just(request.requestHeaders().get("X-User-ID") ?: "none"))
+                    }
                     routes.get("/v1/posts/slow") { _, response ->
                         response.sendString(
                             Mono
@@ -94,6 +165,11 @@ class GatewayApplicationSpec : BehaviorSpec() {
         @JvmStatic
         @DynamicPropertySource
         fun backendRoute(registry: DynamicPropertyRegistry) {
+            // The whole issuers[0] entry lives here: Boot binds an indexed list from a single
+            // property source, so splitting it with the annotation's properties loses fields.
+            registry.add("app.config.jwt.issuers[0].issuer") { ISSUER }
+            registry.add("app.config.jwt.issuers[0].audience") { AUDIENCE }
+            registry.add("app.config.jwt.issuers[0].jwks-uri") { "http://localhost:${backend.port()}/jwks" }
             registry.add("spring.cloud.gateway.server.webflux.routes[0].id") { "stub-backend" }
             registry.add("spring.cloud.gateway.server.webflux.routes[0].uri") { "http://localhost:${backend.port()}" }
             registry.add("spring.cloud.gateway.server.webflux.routes[0].predicates[0]") { "Path=/v1/**" }

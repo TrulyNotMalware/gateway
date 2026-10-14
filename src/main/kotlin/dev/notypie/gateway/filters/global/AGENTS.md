@@ -31,6 +31,13 @@ cover actuator and error responses, not just gateway-routed traffic.
 chain, so a header stamped there would be deleted by `TrustHeaderStripFilter` (`-200`) before it
 ever reached a backend.
 
+**Subscribe to `chain.filter` exactly once.** It returns `Mono<Void>`, which always completes
+empty, so `chain.filter(x).switchIfEmpty(...)` or `.flatMap { chain.filter(it) }.switchIfEmpty(chain.filter(exchange))`
+runs the rest of the chain a second time. `JwtUserIdInjectionFilter` did that for every
+authenticated request (the routing filter's already-routed guard hid it, but `SecurityFilter`
+counted each request twice). Choose the exchange first (`map` + `defaultIfEmpty`), then
+`flatMap { chain.filter(it) }`.
+
 **Never read the client IP from `X-Forwarded-For` directly.** Inject the `RemoteAddressResolver`
 bean (`XForwardedRemoteAddressResolver.maxTrustedIndex(trustedProxyHops)`), which trusts N entries
 *from the right* so a client cannot spoof a leftmost-prepended address. `SecurityFilter` and
