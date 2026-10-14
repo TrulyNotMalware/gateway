@@ -54,8 +54,10 @@ backend breaks the trust model.
 ./gradlew ktlintFormat # autofix
 ```
 CI does **not** run tests on `main` — `simple_test_action.yaml` and `lint.yaml` only trigger on
-`feature/*`, `feat/*`, `features/*` branches. Anything merged straight to `main` is unverified by
-CI, so run `./gradlew build` locally before pushing there.
+pushes to `feature/*`, `feat/*`, `features/*` and Dependabot's `dependabot/**` branches, and only
+when the push touches their `paths:` filters (so Dependabot's Gradle bumps are tested, its docker
+and github-actions bumps are not). Anything merged straight to `main` is unverified by CI, so run
+`./gradlew build` locally before pushing there.
 
 ### Common Patterns
 - Kotlin coroutines bridged into Reactor via `mono { }` / `awaitSingleOrNull()` — the codebase

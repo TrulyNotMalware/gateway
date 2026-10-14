@@ -39,7 +39,10 @@ testing — no Spring context, no Testcontainers, and no live Redis.
   between cases otherwise.
 
 ### Working In This Directory
-- Every production class currently has a matching spec except `LoggingFilter` (no branching).
+- Classes without a spec of their own: `LoggingFilter` (no branching), `GatewayHopHeaderFilter`,
+  and the wiring classes `RedisConfiguration`, `Conditions`, `RemoteAddressResolverConfig` and
+  `SecurityConfig` (its validators are in `SecurityValidatorsSpec`; its chain and CORS setup run in
+  `GatewayApplicationSpec`). A new class should come with a spec.
   `ReactiveRedissonClientModuleSpec` mocks the Redisson client, the one storage-layer mock: Redis
   semantics themselves still need a live Redis. Preserve that — a new class without a spec
   is an incomplete change.

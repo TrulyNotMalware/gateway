@@ -29,7 +29,8 @@ Dependabot configuration and the three GitHub Actions workflows. There is no CI 
 **Tests and lint never run on `main` and never on `pull_request` events.** They run on pushes to
 feature branches and to Dependabot's `dependabot/**` branches (a Dependabot PR's branch is pushed to
 this repository, so the push trigger covers it; Dependabot runs get a read-only token, which these
-two workflows do not need beyond `contents: read`). A commit pushed straight to `main` — or a PR
+two workflows do not need beyond `contents: read`), and only when the push touches their `paths:`
+filters: Dependabot's Gradle bumps are tested, its docker and github-actions bumps are not. A commit pushed straight to `main` — or a PR
 from any other branch name — is unverified by CI. Run `./gradlew build` locally before pushing to
 `main`.
 

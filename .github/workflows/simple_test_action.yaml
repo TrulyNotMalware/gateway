@@ -5,7 +5,8 @@ on:
       - "feature/*"
       - "feat/*"
       - "features/*"
-      # Version-bump branches are tested before they are merged.
+      # Dependabot's Gradle bump branches. Its docker and github-actions bumps do not touch the
+      # paths below, so they do not trigger this workflow.
       - "dependabot/**"
     paths:
       - "src/**"

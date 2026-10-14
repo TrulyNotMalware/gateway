@@ -1,7 +1,8 @@
 name: Lint Check
 on:
   push:
-    # dependabot/** so version-bump branches are linted before they are merged.
+    # dependabot/**: Dependabot's Gradle bump branches. Its docker and github-actions bumps do not
+    # touch the paths below, so they do not trigger this workflow.
     branches: ["feature/*", "feat/*", "features/*", "dependabot/**"]
     paths: ["src/**", "test/**", "*.gradle.kts"]
 
