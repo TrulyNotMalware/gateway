@@ -194,8 +194,9 @@ main() {
 
     local detected_os=$(detect_os)
 
-    if [ "$detected_os" = "unknown" ]; then
-        log_warning "Unsupported OS detected. Applying common configuration."
+    if [ "$detected_os" = "unknown" ] || [ "$detected_os" = "windows" ]; then
+        # There is no Windows preset: Git Bash, MSYS and Cygwin get the OS-independent one.
+        log_warning "No preset for OS '$detected_os'. Applying common configuration."
         apply_common_config
     else
         log_info "Detected OS: $detected_os"

@@ -44,6 +44,12 @@ The custom validators are `KidPresenceValidator` (rotation discipline), `Require
 `{issuer}/.well-known/openid-configuration`, while this gateway hits JWKS URIs directly over
 cluster DNS. Unknown issuer → `Mono.empty()` → 401 with no fallback.
 
+**The security chain applies the gateway's `globalcors` too** (`.cors { }` with a source built
+from `GlobalCorsProperties`). The gateway adds CORS headers in its handler mapping, after every
+WebFilter, so a 401 from Spring Security carried none and a browser could not read it. Keep the
+two in step: CORS is configured once, under `spring.cloud.gateway.server.webflux.globalcors`. If
+per-route `cors` metadata is ever introduced, the security chain does not see it.
+
 **Adding a backend requires no code change**: append an `app.config.jwt.issuers[N]` entry with
 `issuer`, `jwks-uri`, and `audience`.
 

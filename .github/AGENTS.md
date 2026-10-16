@@ -11,7 +11,7 @@ Dependabot configuration and the three GitHub Actions workflows. There is no CI 
 
 | File | Description |
 |------|-------------|
-| `dependabot.yml` | Weekly updates for `gradle` and `github-actions`, 5 open PRs max each |
+| `dependabot.yml` | Weekly updates for `gradle`, `github-actions` and `docker` (the Dockerfile base image), 5 open PRs max each |
 | `workflows/security.yaml` | Submits the resolved Gradle dependency graph to GitHub |
 | `workflows/lint.yaml` | `./gradlew ktlintCheck` |
 | `workflows/simple_test_action.yaml` | `./gradlew test` with `dorny/paths-filter` gating |
@@ -23,12 +23,16 @@ Dependabot configuration and the three GitHub Actions workflows. There is no CI 
 | Workflow | Triggers |
 |----------|----------|
 | `security.yaml` | push to `main`/`master`, weekly cron (Mon 06:00 UTC), `workflow_dispatch` |
-| `lint.yaml` | push to `feature/*`, `feat/*`, `features/*` with changes to `src/**`, `test/**`, `*.gradle.kts` |
+| `lint.yaml` | push to `feature/*`, `feat/*`, `features/*`, `dependabot/**` with changes to `src/**`, `test/**`, `*.gradle.kts` |
 | `simple_test_action.yaml` | same branch patterns, plus `gradle/**` |
 
-**Tests and lint never run on `main` and never on pull requests.** A commit pushed straight to
-`main` — or a PR merged without a feature-branch push — is completely unverified by CI. Run
-`./gradlew build` locally before pushing to `main`.
+**Tests and lint never run on `main` and never on `pull_request` events.** They run on pushes to
+feature branches and to Dependabot's `dependabot/**` branches (a Dependabot PR's branch is pushed to
+this repository, so the push trigger covers it; Dependabot runs get a read-only token, which these
+two workflows do not need beyond `contents: read`), and only when the push touches their `paths:`
+filters: Dependabot's Gradle bumps are tested, its docker and github-actions bumps are not. A commit pushed straight to `main` — or a PR
+from any other branch name — is unverified by CI. Run `./gradlew build` locally before pushing to
+`main`.
 
 ### security.yaml
 `gradle/actions/dependency-submission` uploads the resolved dependency graph so Dependabot can

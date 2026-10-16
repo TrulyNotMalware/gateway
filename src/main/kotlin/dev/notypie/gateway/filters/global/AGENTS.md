@@ -31,6 +31,13 @@ cover actuator and error responses, not just gateway-routed traffic.
 chain, so a header stamped there would be deleted by `TrustHeaderStripFilter` (`-200`) before it
 ever reached a backend.
 
+**Subscribe to `chain.filter` exactly once.** It returns `Mono<Void>`, which always completes
+empty, so `chain.filter(x).switchIfEmpty(...)` or `.flatMap { chain.filter(it) }.switchIfEmpty(chain.filter(exchange))`
+runs the rest of the chain a second time. `JwtUserIdInjectionFilter` did that for every
+authenticated request (the routing filter's already-routed guard hid it, but `SecurityFilter`
+counted each request twice). Choose the exchange first (`map` + `defaultIfEmpty`), then
+`flatMap { chain.filter(it) }`.
+
 **Never read the client IP from `X-Forwarded-For` directly.** Inject the `RemoteAddressResolver`
 bean (`XForwardedRemoteAddressResolver.maxTrustedIndex(trustedProxyHops)`), which trusts N entries
 *from the right* so a client cannot spoof a leftmost-prepended address. `SecurityFilter` and
@@ -43,7 +50,12 @@ rate-limit bucket that a single client could exhaust for everyone.
 ### SecurityFilter specifics
 - The blacklist check, the multi-dimension rate-limit check, and the login-specific rate-limit
   check run concurrently inside `coroutineScope` under a single `withTimeout(security.timeoutMs)`.
-- `tighter(a, b)` combines two `RateLimitResult`s: **check `allowed` first**, then compare
+- **The deadline and the failure handler cover only those checks.** They produce a decision
+  (allow or block); `chain.filter` runs after it, outside the `try`. Wrapping the downstream call
+  cut off every backend response slower than `timeoutMs` (prod: 1000 ms, file uploads allow 300 s)
+  and let the handler run the rest of the chain a second time. A `CancellationException` that is
+  not the deadline (the client went away) is rethrown, never treated as a failed check.
+- `RateLimitResult.tighter(a, b)` combines two results: **check `allowed` first**, then compare
   `remaining`. A denied result must win even when both have `remaining == 0`.
 - Login paths (`security.loginPaths`) get a dedicated tight IP-keyed limit (default 10/min) because
   they are pre-auth — the generic 100/min endpoint quota is far too loose for a small fixed
@@ -52,6 +64,10 @@ rate-limit bucket that a single client could exhaust for everyone.
   coroutine *before* `ReactiveRedissonClientModule.increment`'s own fallback can run. It re-applies
   the operator's `redisFailureMode`, so `FAIL_CLOSED` does not silently degrade to `FAIL_OPEN` when
   Redis is merely slow. `HYBRID_IN_MEMORY` allows on timeout — the local counter was never reached.
+- The login-path match and the endpoint counter key use `normalizedPath` (segments
+  percent-decoded, `;` path parameters dropped), i.e. the path as Spring Security and the backend
+  read it. With the raw path, `/v1/auth/%6Cogin` passed `permitAll` as the login route yet skipped
+  the login limiter. The audit log still records the raw path.
 - Block decisions go to the `"AUDIT"` named logger as
   `decision=BLOCK reason=… ip=… userId=… path=… requestId=…`. Keep that shape; it is parsed downstream.
 - `X-API-Key` is still stripped at `-200`, but `TrustHeaderStripFilter` now captures the inbound

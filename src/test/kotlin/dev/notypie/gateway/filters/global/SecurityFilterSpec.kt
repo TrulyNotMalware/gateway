@@ -6,20 +6,31 @@ import dev.notypie.gateway.modules.redis.InMemoryModule
 import dev.notypie.gateway.modules.redis.RedisModule
 import dev.notypie.gateway.service.BlacklistService
 import dev.notypie.gateway.service.RateLimitService
+import io.kotest.assertions.nondeterministic.eventually
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.springframework.cloud.gateway.filter.GatewayFilterChain
 import org.springframework.cloud.gateway.support.ipresolver.XForwardedRemoteAddressResolver
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.mock.web.server.MockServerWebExchange
+import org.springframework.web.server.ServerWebExchange
 import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 import java.net.InetSocketAddress
+import java.net.URI
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 
 class SecurityFilterSpec :
     BehaviorSpec({
@@ -238,6 +249,68 @@ class SecurityFilterSpec :
                 then("the 11th login is blocked with 429") {
                     passed shouldBe false
                     ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
+                }
+            }
+
+            `when`("further login attempts arrive percent-encoded or with path parameters") {
+                val rateLimit = RateLimitService(InMemoryModule())
+                val filter = SecurityFilter(BlacklistService(InMemoryModule()), rateLimit, cfg, jsonMapper, resolver)
+
+                // URI.create keeps the escapes as sent; the String overload would encode '%' again.
+                fun loginRequest(path: String) =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .method(HttpMethod.POST, URI.create(path))
+                            .remoteAddress(InetSocketAddress("7.7.7.8", 0)),
+                    )
+
+                repeat(
+                    10,
+                ) {
+                    filter
+                        .filter(
+                            loginRequest("/v1/auth/login"),
+                            GatewayFilterChain { Mono.empty() },
+                        ).awaitSingleOrNull()
+                }
+
+                val variants = listOf("/v1/auth/%6Cogin", "/v1/auth/login;x=1", "/v1/%61uth/login")
+                val statuses =
+                    variants.map { path ->
+                        val ex = loginRequest(path)
+                        filter.filter(ex, GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                        ex.response.statusCode
+                    }
+                then("they count as the same login path and are blocked with 429") {
+                    statuses shouldBe List(variants.size) { HttpStatus.TOO_MANY_REQUESTS }
+                }
+            }
+
+            `when`("one endpoint is requested under different encodings") {
+                val filter =
+                    SecurityFilter(
+                        BlacklistService(InMemoryModule()),
+                        RateLimitService(InMemoryModule()),
+                        cfg.copy(security = cfg.security.copy(endpointMaxRequests = 1)),
+                        jsonMapper,
+                        resolver,
+                    )
+
+                fun get(path: String): MockServerWebExchange {
+                    val ex =
+                        MockServerWebExchange.from(
+                            MockServerHttpRequest
+                                .method(HttpMethod.GET, URI.create(path))
+                                .remoteAddress(InetSocketAddress("7.7.7.9", 0)),
+                        )
+                    return ex
+                }
+
+                filter.filter(get("/v1/posts/a"), GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                val encoded = get("/v1/posts/%61")
+                filter.filter(encoded, GatewayFilterChain { Mono.empty() }).awaitSingleOrNull()
+                then("they share one endpoint counter") {
+                    encoded.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
                 }
             }
 
@@ -460,6 +533,159 @@ class SecurityFilterSpec :
                     ).awaitSingleOrNull()
                 then("the chain passes — availability preferred, per the configured stance") {
                     passed shouldBe true
+                }
+            }
+        }
+
+        given("SecurityFilter when the downstream call is slow, fails or is cancelled") {
+            // DefaultGatewayFilterChain.filter() wraps the rest of the chain in Mono.defer, so one
+            // subscription here is one run of the remaining filters (NettyRoutingFilter included).
+            class CountingChain(
+                private val downstream: () -> Mono<Void>,
+            ) : GatewayFilterChain {
+                val runs = AtomicInteger()
+                val completions = AtomicInteger()
+
+                override fun filter(exchange: ServerWebExchange): Mono<Void> =
+                    Mono.defer {
+                        runs.incrementAndGet()
+                        downstream().doOnSuccess { completions.incrementAndGet() }
+                    }
+            }
+
+            fun filterFor(mode: RedisFailureMode) =
+                SecurityFilter(
+                    BlacklistService(InMemoryModule()),
+                    RateLimitService(InMemoryModule()),
+                    // Generous margin: the in-memory checks must finish well inside it even on a slow CI
+                    // runner, while the backend below (1000 ms) is still slower than the deadline.
+                    AppConfig(security = AppConfig.Security(timeoutMs = 500, redisFailureMode = mode)),
+                    jsonMapper,
+                    resolver,
+                )
+
+            fun upload(ip: String) =
+                MockServerWebExchange.from(
+                    MockServerHttpRequest
+                        .post("/v1/files/upload/a")
+                        .remoteAddress(InetSocketAddress(ip, 0)),
+                )
+
+            `when`("the backend answers after timeoutMs (mode=HYBRID_IN_MEMORY)") {
+                val chain = CountingChain { Mono.delay(Duration.ofMillis(1000)).then() }
+                filterFor(RedisFailureMode.HYBRID_IN_MEMORY).filter(upload("6.6.8.1"), chain).awaitSingleOrNull()
+                then("the downstream call runs once, to completion — timeoutMs bounds only the checks") {
+                    chain.runs.get() shouldBe 1
+                    chain.completions.get() shouldBe 1
+                }
+            }
+
+            `when`("the backend answers after timeoutMs (mode=FAIL_CLOSED)") {
+                val chain = CountingChain { Mono.delay(Duration.ofMillis(1000)).then() }
+                val ex = upload("6.6.8.2")
+                filterFor(RedisFailureMode.FAIL_CLOSED).filter(ex, chain).awaitSingleOrNull()
+                then("a slow but healthy backend is not turned into a 429") {
+                    chain.runs.get() shouldBe 1
+                    chain.completions.get() shouldBe 1
+                    ex.response.statusCode shouldBe null
+                }
+            }
+
+            `when`("the downstream call fails") {
+                val chain = CountingChain { Mono.error(IllegalStateException("connection refused")) }
+                val error =
+                    shouldThrow<IllegalStateException> {
+                        filterFor(RedisFailureMode.HYBRID_IN_MEMORY)
+                            .filter(upload("6.6.8.3"), chain)
+                            .awaitSingleOrNull()
+                    }
+                then("the error reaches the caller and the chain is not run again") {
+                    error.message shouldBe "connection refused"
+                    chain.runs.get() shouldBe 1
+                }
+            }
+
+            `when`("the exchange is cancelled while the backend is in flight") {
+                val chain = CountingChain { Mono.never() }
+                val subscription =
+                    filterFor(RedisFailureMode.HYBRID_IN_MEMORY)
+                        .filter(upload("6.6.8.4"), chain)
+                        .subscribe()
+                eventually(2.seconds) { chain.runs.get() shouldBe 1 }
+                subscription.dispose()
+                delay(300)
+                then("the cancellation is not treated as a failed check that re-runs the chain") {
+                    chain.runs.get() shouldBe 1
+                }
+            }
+
+            `when`("the exchange is cancelled while the checks are still running") {
+                // A Redis call that never answers: the client goes away before the deadline.
+                class StallingModule : RedisModule by InMemoryModule() {
+                    val entered = AtomicBoolean()
+
+                    override suspend fun increment(key: String, count: Long, ttlSeconds: Long): Long {
+                        entered.set(true)
+                        awaitCancellation()
+                    }
+                }
+                val stalling = StallingModule()
+                val chain = CountingChain { Mono.empty() }
+                val subscription =
+                    SecurityFilter(
+                        BlacklistService(InMemoryModule()),
+                        RateLimitService(stalling),
+                        AppConfig(
+                            security =
+                                AppConfig.Security(
+                                    timeoutMs = 5000,
+                                    redisFailureMode = RedisFailureMode.HYBRID_IN_MEMORY,
+                                ),
+                        ),
+                        jsonMapper,
+                        resolver,
+                    ).filter(upload("6.6.8.5"), chain).subscribe()
+                eventually(2.seconds) { stalling.entered.get() shouldBe true }
+                subscription.dispose()
+                delay(300)
+                then("the cancellation is rethrown, not handled as a failed check that lets the request through") {
+                    chain.runs.get() shouldBe 0
+                }
+            }
+        }
+
+        given("SecurityFilter when a check fails with a CancellationException while the request is live") {
+            // A library can surface an internally cancelled future as a CancellationException error.
+            // The exchange is not cancelled, so this is an ordinary check failure.
+            class CancellingExistsModule : RedisModule by InMemoryModule() {
+                override suspend fun exists(key: String): Boolean =
+                    throw CancellationException("cancelled inside the client")
+            }
+
+            `when`("mode=FAIL_CLOSED") {
+                val ex =
+                    MockServerWebExchange.from(
+                        MockServerHttpRequest
+                            .get("/v1/posts")
+                            .remoteAddress(InetSocketAddress("6.6.9.1", 0)),
+                    )
+                var passed = false
+                SecurityFilter(
+                    BlacklistService(CancellingExistsModule()),
+                    RateLimitService(InMemoryModule()),
+                    AppConfig(security = AppConfig.Security(redisFailureMode = RedisFailureMode.FAIL_CLOSED)),
+                    jsonMapper,
+                    resolver,
+                ).filter(
+                    ex,
+                    GatewayFilterChain {
+                        passed = true
+                        Mono.empty()
+                    },
+                ).awaitSingleOrNull()
+                then("it follows redisFailureMode (429) instead of failing the request") {
+                    passed shouldBe false
+                    ex.response.statusCode shouldBe HttpStatus.TOO_MANY_REQUESTS
                 }
             }
         }

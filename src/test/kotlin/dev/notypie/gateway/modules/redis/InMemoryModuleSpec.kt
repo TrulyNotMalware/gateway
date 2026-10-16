@@ -58,6 +58,19 @@ class InMemoryModuleSpec :
             }
         }
 
+        given("InMemoryModule increment after the window expired") {
+            `when`("the same key is incremented again once its TTL has passed") {
+                val mod = InMemoryModule()
+                mod.increment("rate:ip:1", count = 5, ttlSeconds = 1)
+                delay(1100)
+                val next = mod.increment("rate:ip:1", count = 1, ttlSeconds = 60)
+                then("a new window starts: the count restarts and the new TTL applies") {
+                    next shouldBe 1L
+                    mod.remainingTtl("rate:ip:1") shouldBeGreaterThan 1L
+                }
+            }
+        }
+
         given("InMemoryModule TTL expiry") {
             `when`("time passes after setting a short TTL") {
                 val mod = InMemoryModule()

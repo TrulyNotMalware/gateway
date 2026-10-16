@@ -101,8 +101,9 @@ class RateLimitService(
             if (checks.isEmpty()) {
                 RateLimitResult.allowed(Long.MAX_VALUE, -1)
             } else {
-                val results = checks.awaitAll()
-                results.minByOrNull { it.remaining } ?: RateLimitResult.allowed(Long.MAX_VALUE, -1)
+                // Not minBy { remaining }: an allowed result with remaining == 0 would tie with a
+                // denied one and could hide it.
+                checks.awaitAll().reduce(RateLimitResult::tighter)
             }
         }
 
@@ -128,6 +129,18 @@ data class RateLimitResult(
         fun allowed(remaining: Long, resetTimeSeconds: Long) = RateLimitResult(true, remaining, resetTimeSeconds)
 
         fun exceeded(remaining: Long, resetTimeSeconds: Long) = RateLimitResult(false, remaining, resetTimeSeconds)
+
+        /**
+         * Combine two results: block if EITHER denies, otherwise carry the tighter remaining.
+         * A denied result must win even when both have the same `remaining` (e.g. both 0), so check
+         * `allowed` first rather than relying on `remaining` as a proxy for it.
+         */
+        fun tighter(a: RateLimitResult, b: RateLimitResult): RateLimitResult =
+            when {
+                !a.allowed -> a
+                !b.allowed -> b
+                else -> if (a.remaining <= b.remaining) a else b
+            }
     }
 }
 

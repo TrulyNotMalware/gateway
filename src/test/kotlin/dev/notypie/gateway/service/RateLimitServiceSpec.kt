@@ -64,6 +64,30 @@ class RateLimitServiceSpec :
                 }
             }
 
+            `when`("one dimension is exactly at its limit while another is already over") {
+                val svc = RateLimitService(InMemoryModule())
+                val limits =
+                    RateLimitConfig(
+                        ipMaxRequests = 2,
+                        userMaxRequests = 1000,
+                        endpointMaxRequests = 1,
+                        windowSeconds = 60,
+                    )
+                // 1st request: ip=1/2, endpoint=1/1 — both allowed.
+                svc.checkMultipleRateLimits(ip = "5.6.7.8", userId = null, endpoint = "/e", limits = limits)
+                // 2nd request: ip=2/2 (allowed, remaining 0), endpoint=2/1 (exceeded, remaining 0).
+                val second =
+                    svc.checkMultipleRateLimits(
+                        ip = "5.6.7.8",
+                        userId = null,
+                        endpoint = "/e",
+                        limits = limits,
+                    )
+                then("the exceeded dimension wins the tie at remaining=0") {
+                    second.allowed shouldBe false
+                }
+            }
+
             `when`("all identifiers are null") {
                 val svc = RateLimitService(InMemoryModule())
                 val result = svc.checkMultipleRateLimits(null, null, null)

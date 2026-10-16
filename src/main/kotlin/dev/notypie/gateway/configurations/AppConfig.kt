@@ -107,7 +107,19 @@ data class AppConfig(
         // FAIL_OPEN/HYBRID allow (there is no per-pod blacklist fallback: blacklist
         // state is only meaningful cluster-wide).
         val redisFailureMode: RedisFailureMode = RedisFailureMode.HYBRID_IN_MEMORY,
-    )
+    ) {
+        // The generated toString would print the shared secret and every allowed API key.
+        // A field added above must be added here too; secrets go through masked().
+        override fun toString(): String =
+            "Security(timeoutMs=$timeoutMs, trustedProxyHops=$trustedProxyHops, " +
+                "enableBlacklist=$enableBlacklist, enableRateLimit=$enableRateLimit, " +
+                "ipMaxRequests=$ipMaxRequests, userMaxRequests=$userMaxRequests, " +
+                "endpointMaxRequests=$endpointMaxRequests, windowSeconds=$windowSeconds, " +
+                "apiKeyMaxRequests=$apiKeyMaxRequests, allowedApiKeys=${allowedApiKeys.map(::masked)}, " +
+                "loginMaxRequests=$loginMaxRequests, loginWindowSeconds=$loginWindowSeconds, " +
+                "loginPaths=$loginPaths, strippedTrustHeaders=$strippedTrustHeaders, " +
+                "gatewaySharedSecret=${masked(gatewaySharedSecret)}, redisFailureMode=$redisFailureMode)"
+    }
 
     data class Blacklist(
         val storageMode: StorageMode = StorageMode.IN_MEMORY,
@@ -128,7 +140,16 @@ data class AppConfig(
         val threads: Int = 16,
         val nettyThreads: Int = 32,
         val transportMode: TransportMode = TransportMode.NIO,
-    )
+    ) {
+        // The generated toString would print the Redis password. Keep in step with the fields.
+        override fun toString(): String =
+            "Redis(mode=$mode, cluster=$cluster, host=$host, port=$port, " +
+                "standaloneConnectionPoolSize=$standaloneConnectionPoolSize, " +
+                "standaloneConnectionMinimumIdleSize=$standaloneConnectionMinimumIdleSize, " +
+                "standaloneDatabase=$standaloneDatabase, connectTimeout=$connectTimeout, timeout=$timeout, " +
+                "retryAttempts=$retryAttempts, password=${masked(password)}, threads=$threads, " +
+                "nettyThreads=$nettyThreads, transportMode=$transportMode)"
+    }
 
     data class Cluster(
         val nodes: List<String> = emptyList(),
@@ -143,6 +164,9 @@ data class AppConfig(
         val failedNodeDetector: FailedNodeDetectorType = FailedNodeDetectorType.CONNECTION_DETECTOR,
     )
 }
+
+/** Shows only whether a secret is set, never its value. */
+private fun masked(secret: String): String = if (secret.isEmpty()) "<empty>" else "****"
 
 enum class RedisMode {
     STANDALONE,

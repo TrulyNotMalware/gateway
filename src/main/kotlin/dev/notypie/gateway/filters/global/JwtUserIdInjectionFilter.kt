@@ -42,20 +42,22 @@ class JwtUserIdInjectionFilter :
                 } else {
                     Mono.empty()
                 }
-            }.flatMap { auth ->
+            }.map { auth ->
                 val sub = auth.name
                 logger.debug { "JWT auth — propagating X-User-ID=$sub path=${exchange.request.path}" }
-                val mutated =
-                    exchange
-                        .mutate()
-                        .request(
-                            exchange.request
-                                .mutate()
-                                .header(HEADER, sub)
-                                .build(),
-                        ).build()
-                chain.filter(mutated)
-            }.switchIfEmpty(chain.filter(exchange))
+                exchange
+                    .mutate()
+                    .request(
+                        exchange.request
+                            .mutate()
+                            .header(HEADER, sub)
+                            .build(),
+                    ).build()
+            }.defaultIfEmpty(exchange)
+            // Pick the exchange first, then subscribe to the rest of the chain exactly once.
+            // chain.filter returns Mono<Void>, which always completes empty: a switchIfEmpty placed
+            // after it fired for every authenticated request and ran the chain a second time.
+            .flatMap { chain.filter(it) }
 
     companion object {
         const val HEADER = "X-User-ID"

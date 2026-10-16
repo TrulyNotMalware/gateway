@@ -5,6 +5,9 @@ on:
       - "feature/*"
       - "feat/*"
       - "features/*"
+      # Dependabot's Gradle bump branches. Its docker and github-actions bumps do not touch the
+      # paths below, so they do not trigger this workflow.
+      - "dependabot/**"
     paths:
       - "src/**"
       - "test/**"
