@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25.0.1_8-jre-alpine
+FROM eclipse-temurin:27_35-jre-alpine
 ARG JAR_FILE_NAME=gateway-alpha
 # non-root 컨테이너에서 동작하므로 1024+ 포트 사용. Service 에서 80 → targetPort:http(8080) 매핑.
 ARG SERVER_PORT=8080
