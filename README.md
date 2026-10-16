@@ -11,9 +11,9 @@
 ## Requirements
 
 - JDK 25 (Eclipse Temurin — the Gradle toolchain pins both version and vendor)
-- Kotlin 2.4.10
-- Spring Boot 4.1.0 / Spring Cloud 2025.1.2
-- Gradle 9.7.0 (use the bundled wrapper)
+- Kotlin 2.4.21
+- Spring Boot 4.1.1 / Spring Cloud 2025.1.2
+- Gradle 9.8.1 (use the bundled wrapper)
 - Redis (optional, can run in-memory mode)
 
 ## Configuration

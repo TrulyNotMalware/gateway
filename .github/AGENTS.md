@@ -61,7 +61,7 @@ can be run on demand from the Actions tab; the other two require a push to a mat
 ## Dependencies
 
 ### External
-- `actions/checkout@v7`, `actions/setup-java@v5`, `actions/upload-artifact@v7`
+- `actions/checkout@v7`, `actions/setup-java@v6`, `actions/upload-artifact@v7`
 - `gradle/actions/dependency-submission@v6`, `dorny/paths-filter@v4`
 
 <!-- MANUAL: -->

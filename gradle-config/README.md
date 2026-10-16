@@ -1,6 +1,6 @@
 # OS-Specific Gradle Configuration
 
-This directory contains OS-optimized Gradle configuration files and automated setup scripts for Java 25 + Kotlin 2.4.10 + Spring Boot 4 projects.
+This directory contains OS-optimized Gradle configuration files and automated setup scripts for Java 25 + Kotlin 2.4.21 + Spring Boot 4 projects.
 
 ## Quick Start
 
@@ -110,10 +110,10 @@ These are floors for the presets themselves, not for this repository:
 The stack this repository currently builds against — see `build.gradle.kts` and
 `gradle/wrapper/gradle-wrapper.properties` for the authoritative values:
 
-- **Gradle:** 9.7.0
+- **Gradle:** 9.8.1
 - **Java:** 25 (Eclipse Temurin, pinned by the toolchain)
-- **Kotlin:** 2.4.10
-- **Spring Boot:** 4.1.0
+- **Kotlin:** 2.4.21
+- **Spring Boot:** 4.1.1
 
 ### OS Support Matrix
 | OS                        | File | Status | Notes |

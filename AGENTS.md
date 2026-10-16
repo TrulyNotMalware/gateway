@@ -17,7 +17,7 @@ backend breaks the trust model.
 
 | File | Description |
 |------|-------------|
-| `build.gradle.kts` | Kotlin JVM 2.4.10 + Spring Boot 4.1.0 + ktlint 14.2.0; Java 25 toolchain (Adoptium); BOM-driven dependency versions |
+| `build.gradle.kts` | Kotlin JVM 2.4.21 + Spring Boot 4.1.1 + ktlint 14.2.0; Java 25 toolchain (Adoptium); BOM-driven dependency versions |
 | `settings.gradle.kts` | Single-module build, `rootProject.name = "gateway"` |
 | `gradle.properties` | Git-ignored and per machine: written by `gradle-config/apply.sh` from an OS preset (daemon JVM args, configuration cache, parallel, build cache). CI runs without one |
 | `Dockerfile` | `eclipse-temurin:25.0.1_8-jre-alpine`, copies `build/libs/gateway-alpha.jar`, exec-form ENTRYPOINT so SIGTERM reaches the JVM |
@@ -33,7 +33,7 @@ backend breaks the trust model.
 | `src/` | Kotlin sources, config, and k8s manifests (see `src/AGENTS.md`) |
 | `.github/` | Dependabot config and CI workflows (see `.github/AGENTS.md`) |
 | `gradle-config/` | OS-specific `gradle.properties` presets and installer (see `gradle-config/AGENTS.md`) |
-| `gradle/` | Gradle wrapper (9.7.0) — regenerate only via `./gradlew wrapper` |
+| `gradle/` | Gradle wrapper (9.8.1) — regenerate only via `./gradlew wrapper` |
 
 ## For AI Agents
 
@@ -70,7 +70,7 @@ and github-actions bumps are not). Anything merged straight to `main` is unverif
 ## Dependencies
 
 ### External
-- Spring Boot 4.1.0 / Spring Cloud 2025.1.2 — `spring-cloud-starter-gateway-server-webflux`
+- Spring Boot 4.1.1 / Spring Cloud 2025.1.2 — `spring-cloud-starter-gateway-server-webflux`
 - Spring Security + `oauth2-resource-server` — multi-issuer JWT verification
 - Redisson 4.6.0 — reactive Redis client (standalone + cluster)
 - Resilience4j (`spring-cloud-starter-circuitbreaker-reactor-resilience4j`) — per-route breakers
