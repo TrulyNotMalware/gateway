@@ -22,7 +22,7 @@ extra["springCloudVersion"] = "2025.1.2"
 extra["kotestVersion"] = "6.2.0"
 extra["mockkVersion"] = "1.14.11"
 extra["redissonVersion"] = "4.6.0"
-extra["reactorKotlinExtensionVersion"] = "1.3.1"
+extra["reactorKotlinExtensionVersion"] = "1.3.2"
 extra["kotlinLoggingVersion"] = "8.0.4"
 
 val springCloudVersion = extra["springCloudVersion"] as String
