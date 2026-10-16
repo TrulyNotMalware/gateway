@@ -122,3 +122,15 @@ tasks.withType<GenerateReportsTask> {
         ),
     )
 }
+
+// io.spring.dependency-management applies the Spring Boot BOM to every configuration, ktlint's
+// included, and the BOM moves org.jetbrains.kotlin artifacts to the Kotlin plugin version. ktlint
+// then parses with that kotlin-compiler-embeddable instead of the one it was built against, which
+// broke on Kotlin 2.4.21 ("Extensions storage is not registered"). Keep the versions ktlint asks for.
+configurations.matching { it.name.startsWith("ktlint") }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin") {
+            requested.version?.let { useVersion(it) }
+        }
+    }
+}
